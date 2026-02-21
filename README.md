@@ -39,7 +39,7 @@ If you've used tools like Claude Code, Cursor, or Copilot Workspace and wondered
 
 ```bash
 # Clone and install
-git clone https://github.com/YOUR_USERNAME/build-your-own-coding-agent.git
+git clone https://github.com/ahmad-luqman/build-your-own-coding-agent.git
 cd build-your-own-coding-agent
 bun install
 
