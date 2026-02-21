@@ -1,15 +1,31 @@
-import type { AgentConfig } from "./types.js";
+import type { AgentConfig, Provider } from "./types.js";
+
+const MODEL_DEFAULTS: Record<Provider, string> = {
+  openrouter: "anthropic/claude-sonnet-4-20250514",
+  ollama: "qwen3-coder-next",
+};
 
 export function loadConfig(): AgentConfig {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) {
-    console.error("Missing OPENROUTER_API_KEY in environment. Copy .env.example to .env and fill it in.");
+  const provider = (process.env.PROVIDER ?? "openrouter") as Provider;
+  if (provider !== "openrouter" && provider !== "ollama") {
+    console.error(`Unknown PROVIDER "${provider}". Supported: openrouter, ollama`);
     process.exit(1);
   }
 
+  let apiKey: string | undefined;
+  if (provider === "openrouter") {
+    apiKey = process.env.OPENROUTER_API_KEY;
+    if (!apiKey) {
+      console.error("Missing OPENROUTER_API_KEY in environment. Copy .env.example to .env and fill it in.");
+      process.exit(1);
+    }
+  }
+
   return {
-    modelId: process.env.MODEL_ID ?? "anthropic/claude-sonnet-4-20250514",
+    provider,
+    modelId: process.env.MODEL_ID ?? MODEL_DEFAULTS[provider],
     apiKey,
+    baseURL: process.env.OLLAMA_BASE_URL,
     systemPrompt: getSystemPrompt(),
     cwd: process.cwd(),
     maxTurns: 40,

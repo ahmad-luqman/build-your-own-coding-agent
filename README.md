@@ -1,6 +1,6 @@
 # Build Your Own Coding Agent
 
-A minimal CLI coding agent built from scratch with Bun, Ink, and AI SDK v6. It connects to LLMs via OpenRouter and provides an interactive terminal interface where you can chat with an AI that has access to your file system and shell.
+A minimal CLI coding agent built from scratch with Bun, Ink, and AI SDK v6. It connects to LLMs via OpenRouter or runs them locally via Ollama, providing an interactive terminal interface where you can chat with an AI that has access to your file system and shell.
 
 ```
 ┌──────────────────────────────────────────────────┐
@@ -30,12 +30,12 @@ If you've used tools like Claude Code, Cursor, or Copilot Workspace and wondered
 - **6 built-in tools** — `read_file`, `glob`, `grep`, `write_file`, `edit_file`, `bash`
 - **Safety system** — Dangerous tools (write, edit, bash) require user approval before execution
 - **Streaming responses** — Text streams token-by-token as the model generates it
-- **Model-agnostic** — Swap models via a single env var (Claude, GPT-4o, Gemini, etc.)
+- **Multi-provider** — OpenRouter for cloud models or Ollama for local models, switchable via env var
 - **Terminal UI** — Built with Ink (React for the terminal) with markdown rendering and syntax highlighting
 
 ## Quick Start
 
-**Prerequisites:** [Bun](https://bun.sh) and an [OpenRouter API key](https://openrouter.ai/keys).
+**Prerequisites:** [Bun](https://bun.sh) and either an [OpenRouter API key](https://openrouter.ai/keys) or [Ollama](https://ollama.com) for local models.
 
 ```bash
 # Clone and install
@@ -57,13 +57,24 @@ To use a different model:
 MODEL_ID=openai/gpt-4o bun run start
 ```
 
+### Using Ollama (Local Models)
+
+Run models locally with no API key required:
+
+```bash
+ollama pull qwen3-coder-next
+PROVIDER=ollama bun run start
+```
+
+See [docs/ollama-setup.md](docs/ollama-setup.md) for recommended models, configuration, and troubleshooting.
+
 ## Project Structure
 
 ```
 src/
   index.tsx        Entry point — wires config, model, tools, and renders the app
   config.ts        Loads env vars and builds the system prompt
-  model.ts         Creates the OpenRouter model via AI SDK
+  model.ts         Multi-provider model factory (OpenRouter / Ollama)
   agent.ts         The core agent loop (async generator)
   app.tsx           Main React component (state machine)
   types.ts         All shared type definitions

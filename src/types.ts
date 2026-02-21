@@ -55,9 +55,13 @@ export interface Hook {
 
 // --- Config ---
 
+export type Provider = "openrouter" | "ollama";
+
 export interface AgentConfig {
+  provider: Provider;
   modelId: string;
-  apiKey: string;
+  apiKey?: string;
+  baseURL?: string;
   systemPrompt: string;
   cwd: string;
   maxTurns: number;

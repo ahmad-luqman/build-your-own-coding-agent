@@ -8,7 +8,7 @@ import { createModel } from "./model.js";
 import { createToolRegistry } from "./tools/registry.js";
 
 const config = loadConfig();
-const model = createModel(config.apiKey, config.modelId);
+const model = createModel(config);
 const tools = createToolRegistry();
 
 render(<App config={config} model={model} tools={tools} />);
