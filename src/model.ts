@@ -1,9 +1,10 @@
-import type { LanguageModelV1 } from "@ai-sdk/provider";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
-import { createOllama } from "ollama-ai-provider";
+import { createOpenAI } from "@ai-sdk/openai";
 import type { AgentConfig } from "./types.js";
 
-export type AgentModel = LanguageModelV1;
+// Both providers return models compatible with streamText() at runtime.
+// Using the OpenRouter return type for continuity; the Ollama path casts to match.
+export type AgentModel = ReturnType<ReturnType<typeof createOpenRouter>["chat"]>;
 
 export function createModel(config: AgentConfig): AgentModel {
   switch (config.provider) {
@@ -12,10 +13,11 @@ export function createModel(config: AgentConfig): AgentModel {
       return openrouter.chat(config.modelId);
     }
     case "ollama": {
-      const ollama = createOllama({
-        baseURL: config.baseURL ?? "http://localhost:11434/api",
+      const ollama = createOpenAI({
+        baseURL: config.baseURL ?? "http://localhost:11434/v1",
+        apiKey: "ollama", // required by the SDK but ignored by Ollama
       });
-      return ollama.chat(config.modelId);
+      return ollama.chat(config.modelId) as unknown as AgentModel;
     }
     default:
       throw new Error(`Unknown provider: ${config.provider}`);

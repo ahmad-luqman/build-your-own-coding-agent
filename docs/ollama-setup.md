@@ -21,7 +21,7 @@ In your `.env` file:
 ```bash
 PROVIDER=ollama
 MODEL_ID=qwen3-coder-next
-# OLLAMA_BASE_URL=http://localhost:11434/api  # default, only set if non-standard
+# OLLAMA_BASE_URL=http://localhost:11434/v1  # default, only set if non-standard
 ```
 
 Or run inline:
@@ -59,10 +59,14 @@ ollama pull qwen3-coder-next
 ```
 
 ### Model doesn't call tools
-Some models don't support tool calling or do it unreliably. Try a model from the recommended list above. You can also set `simulateStreaming` if streaming causes issues (see [ollama-ai-provider docs](https://github.com/sgomez/ollama-ai-provider)).
+Some models don't support tool calling or do it unreliably. Try a model from the recommended list above.
 
 ### Custom Ollama host
 If Ollama runs on a different machine or port:
 ```bash
-OLLAMA_BASE_URL=http://192.168.1.100:11434/api
+OLLAMA_BASE_URL=http://192.168.1.100:11434/v1
 ```
+
+## How It Works
+
+We connect to Ollama via its [OpenAI-compatible API](https://ollama.com/blog/openai-compatibility) (`/v1` endpoint) using the `@ai-sdk/openai` provider from the AI SDK. This gives us full compatibility with AI SDK v6's streaming and tool calling, without needing a dedicated Ollama provider package.
