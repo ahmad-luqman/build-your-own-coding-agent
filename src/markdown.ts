@@ -1,6 +1,7 @@
 import { Marked } from "marked";
-import markedTerminal from "marked-terminal";
+import * as mt from "marked-terminal";
 
+const markedTerminal = (mt as any).markedTerminal ?? mt.default;
 const marked = new Marked(markedTerminal() as any);
 
 export function renderMarkdown(text: string): string {
