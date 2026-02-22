@@ -1,6 +1,6 @@
-import { streamText, tool, type ModelMessage } from "ai";
+import { type ModelMessage, streamText, tool } from "ai";
 import type { AgentModel } from "./model.js";
-import type { AgentEvent, AgentConfig, ToolDefinition, ToolContext, HookHandler } from "./types.js";
+import type { AgentConfig, AgentEvent, HookHandler, ToolContext, ToolDefinition } from "./types.js";
 
 interface AgentOptions {
   model: AgentModel;
@@ -11,7 +11,7 @@ interface AgentOptions {
 
 export async function* runAgent(
   messages: ModelMessage[],
-  options: AgentOptions
+  options: AgentOptions,
 ): AsyncGenerator<AgentEvent> {
   const { model, config, tools, onPreToolUse } = options;
 
@@ -51,7 +51,8 @@ export async function* runAgent(
             toolCallId: chunk.toolCallId,
             result: {
               success: true,
-              output: typeof chunk.output === "string" ? chunk.output : JSON.stringify(chunk.output),
+              output:
+                typeof chunk.output === "string" ? chunk.output : JSON.stringify(chunk.output),
             },
           };
           break;
@@ -70,7 +71,10 @@ export async function* runAgent(
           break;
 
         case "error":
-          yield { type: "error", error: chunk.error instanceof Error ? chunk.error : new Error(String(chunk.error)) };
+          yield {
+            type: "error",
+            error: chunk.error instanceof Error ? chunk.error : new Error(String(chunk.error)),
+          };
           break;
 
         case "finish": {
@@ -103,7 +107,7 @@ export async function* runAgent(
 function buildAITools(
   tools: Map<string, ToolDefinition>,
   cwd: string,
-  onPreToolUse?: HookHandler
+  onPreToolUse?: HookHandler,
 ): Record<string, unknown> {
   const aiTools: Record<string, unknown> = {};
   const ctx: ToolContext = { cwd };

@@ -28,7 +28,7 @@ export const bashTool: ToolDefinition = {
         setTimeout(() => {
           proc.kill();
           reject(new Error(`Command timed out after ${timeout}ms`));
-        }, timeout)
+        }, timeout),
       );
 
       const exitCode = await Promise.race([proc.exited, timeoutPromise]);

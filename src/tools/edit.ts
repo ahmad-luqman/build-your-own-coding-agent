@@ -1,6 +1,6 @@
+import { readFile, writeFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { z } from "zod";
-import { readFile, writeFile } from "fs/promises";
-import { resolve } from "path";
 import type { ToolDefinition } from "../types.js";
 
 const inputSchema = z.object({

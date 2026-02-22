@@ -1,5 +1,5 @@
-import { z } from "zod";
 import { glob as globFn } from "glob";
+import { z } from "zod";
 import type { ToolDefinition } from "../types.js";
 
 const inputSchema = z.object({

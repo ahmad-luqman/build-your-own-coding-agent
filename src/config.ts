@@ -16,7 +16,9 @@ export function loadConfig(): AgentConfig {
   if (provider === "openrouter") {
     apiKey = process.env.OPENROUTER_API_KEY;
     if (!apiKey) {
-      console.error("Missing OPENROUTER_API_KEY in environment. Copy .env.example to .env and fill it in.");
+      console.error(
+        "Missing OPENROUTER_API_KEY in environment. Copy .env.example to .env and fill it in.",
+      );
       process.exit(1);
     }
   }

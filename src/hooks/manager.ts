@@ -1,4 +1,4 @@
-import type { Hook, HookEvent, HookContext, HookDecision } from "../types.js";
+import type { Hook, HookContext, HookDecision, HookEvent } from "../types.js";
 
 export class HookManager {
   private hooks: Hook[] = [];

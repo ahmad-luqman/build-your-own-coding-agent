@@ -1,12 +1,15 @@
-import { z } from "zod";
-import { readFile } from "fs/promises";
+import { readFile } from "node:fs/promises";
+import { relative, resolve } from "node:path";
 import { glob as globFn } from "glob";
-import { resolve, relative } from "path";
+import { z } from "zod";
 import type { ToolDefinition } from "../types.js";
 
 const inputSchema = z.object({
   pattern: z.string().describe("Regex pattern to search for in file contents"),
-  file_pattern: z.string().optional().describe('Glob to filter files (e.g. "*.ts"). Defaults to all files.'),
+  file_pattern: z
+    .string()
+    .optional()
+    .describe('Glob to filter files (e.g. "*.ts"). Defaults to all files.'),
   path: z.string().optional().describe("Directory to search in. Defaults to cwd."),
 });
 

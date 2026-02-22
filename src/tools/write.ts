@@ -1,6 +1,6 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
 import { z } from "zod";
-import { writeFile, mkdir } from "fs/promises";
-import { resolve, dirname } from "path";
 import type { ToolDefinition } from "../types.js";
 
 const inputSchema = z.object({

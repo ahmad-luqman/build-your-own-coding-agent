@@ -1,4 +1,3 @@
-import React from "react";
 import { Box, Text } from "ink";
 import type { TokenUsage } from "../types.js";
 
@@ -17,7 +16,8 @@ export function StatusBar({ modelId, usage }: Props) {
       </Text>
       {usage.totalTokens > 0 && (
         <Text dimColor>
-          tokens: {usage.inputTokens.toLocaleString()} in / {usage.outputTokens.toLocaleString()} out
+          tokens: {usage.inputTokens.toLocaleString()} in / {usage.outputTokens.toLocaleString()}{" "}
+          out
         </Text>
       )}
     </Box>

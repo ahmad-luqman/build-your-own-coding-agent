@@ -1,7 +1,6 @@
-import React from "react";
 import { Box, Text } from "ink";
-import type { DisplayMessage } from "../types.js";
 import { renderMarkdown } from "../markdown.js";
+import type { DisplayMessage } from "../types.js";
 
 interface Props {
   messages: DisplayMessage[];
@@ -43,7 +42,9 @@ export function MessageList({ messages, streamingText }: Props) {
 
       {streamingText && (
         <Box flexDirection="column" marginBottom={1}>
-          <Text bold color="green">Agent</Text>
+          <Text bold color="green">
+            Agent
+          </Text>
           <Box marginLeft={2}>
             <Text wrap="wrap">{streamingText}</Text>
           </Box>
@@ -74,5 +75,5 @@ function formatToolInput(toolName: string, input: Record<string, unknown>): stri
 
 function truncate(text: string, maxLen: number): string {
   if (text.length <= maxLen) return text;
-  return text.slice(0, maxLen) + "...";
+  return `${text.slice(0, maxLen)}...`;
 }

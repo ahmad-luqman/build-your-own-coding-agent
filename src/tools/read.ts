@@ -1,6 +1,6 @@
+import { readFile, stat } from "node:fs/promises";
+import { resolve } from "node:path";
 import { z } from "zod";
-import { readFile, stat } from "fs/promises";
-import { resolve } from "path";
 import type { ToolDefinition } from "../types.js";
 
 const inputSchema = z.object({
@@ -18,10 +18,7 @@ export const readTool: ToolDefinition = {
   execute: async (input, ctx) => {
     try {
       const filePath = resolve(ctx.cwd, input.file_path);
-      const [content, fileInfo] = await Promise.all([
-        readFile(filePath, "utf-8"),
-        stat(filePath),
-      ]);
+      const [content, fileInfo] = await Promise.all([readFile(filePath, "utf-8"), stat(filePath)]);
       const lines = content.split("\n");
       const totalLines = lines.length;
 

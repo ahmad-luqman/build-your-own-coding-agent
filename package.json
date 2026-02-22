@@ -4,7 +4,15 @@
   "type": "module",
   "scripts": {
     "start": "bun run src/index.tsx",
-    "dev": "bun --watch run src/index.tsx"
+    "dev": "bun --watch run src/index.tsx",
+    "lint": "biome check src/",
+    "lint:fix": "biome check --write src/",
+    "format": "biome format --write src/",
+    "typecheck": "bunx tsc --noEmit",
+    "test": "bun test",
+    "test:coverage": "bun test --coverage",
+    "check": "bun run lint && bun run typecheck && bun test",
+    "prepare": "bunx lefthook install"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.30",
@@ -22,8 +30,10 @@
     "zod": "^3.24.0"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.4.4",
+    "@types/bun": "^1.2.0",
     "@types/react": "^18.3.0",
-    "typescript": "^5.7.0",
-    "@types/bun": "^1.2.0"
+    "lefthook": "^2.1.1",
+    "typescript": "^5.7.0"
   }
 }

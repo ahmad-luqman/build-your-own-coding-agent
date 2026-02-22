@@ -1,15 +1,21 @@
-import React, { useState, useCallback, useRef } from "react";
-import { Box, useApp, useInput } from "ink";
 import type { ModelMessage } from "ai";
-import { MessageList } from "./components/MessageList.js";
-import { InputBar } from "./components/InputBar.js";
-import { StatusBar } from "./components/StatusBar.js";
-import { ApprovalPrompt } from "./components/ApprovalPrompt.js";
+import { Box, useApp, useInput } from "ink";
+import { useCallback, useRef, useState } from "react";
 import { runAgent } from "./agent.js";
-import { HookManager } from "./hooks/manager.js";
+import { ApprovalPrompt } from "./components/ApprovalPrompt.js";
+import { InputBar } from "./components/InputBar.js";
+import { MessageList } from "./components/MessageList.js";
+import { StatusBar } from "./components/StatusBar.js";
 import { createDangerousCommandGuard } from "./hooks/dangerous-command-guard.js";
+import { HookManager } from "./hooks/manager.js";
 import type { AgentModel } from "./model.js";
-import type { AgentConfig, DisplayMessage, TokenUsage, ToolDefinition, HookDecision } from "./types.js";
+import type {
+  AgentConfig,
+  DisplayMessage,
+  HookDecision,
+  TokenUsage,
+  ToolDefinition,
+} from "./types.js";
 
 interface Props {
   config: AgentConfig;
@@ -45,7 +51,7 @@ export function App({ config, model, tools }: Props) {
         return new Promise<boolean>((resolve) => {
           setPendingApproval({ toolName, input, resolve });
         });
-      })
+      }),
     );
     hookManagerRef.current = hm;
   }
@@ -56,12 +62,15 @@ export function App({ config, model, tools }: Props) {
     }
   });
 
-  const handleApprovalDecision = useCallback((approved: boolean) => {
-    if (pendingApproval) {
-      pendingApproval.resolve(approved);
-      setPendingApproval(null);
-    }
-  }, [pendingApproval]);
+  const handleApprovalDecision = useCallback(
+    (approved: boolean) => {
+      if (pendingApproval) {
+        pendingApproval.resolve(approved);
+        setPendingApproval(null);
+      }
+    },
+    [pendingApproval],
+  );
 
   const handleSubmit = useCallback(
     async (text: string) => {
@@ -91,7 +100,10 @@ export function App({ config, model, tools }: Props) {
 
       // Create onPreToolUse that delegates to the hook manager
       const onPreToolUse = hookManagerRef.current
-        ? async (ctx: { toolName: string; input: Record<string, unknown> }): Promise<HookDecision> => {
+        ? async (ctx: {
+            toolName: string;
+            input: Record<string, unknown>;
+          }): Promise<HookDecision> => {
             return hookManagerRef.current!.run("pre-tool-use", ctx);
           }
         : undefined;
@@ -156,7 +168,7 @@ export function App({ config, model, tools }: Props) {
       setStreamingText("");
       setIsLoading(false);
     },
-    [messages, isLoading, model, config, tools, exit]
+    [messages, isLoading, model, config, tools, exit],
   );
 
   return (

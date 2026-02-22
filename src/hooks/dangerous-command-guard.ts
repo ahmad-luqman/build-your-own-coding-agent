@@ -12,7 +12,7 @@ const DANGEROUS_BASH_PATTERNS = [
 
 export function createDangerousCommandGuard(
   tools: Map<string, ToolDefinition>,
-  requestApproval: (toolName: string, input: Record<string, unknown>) => Promise<boolean>
+  requestApproval: (toolName: string, input: Record<string, unknown>) => Promise<boolean>,
 ): Hook {
   return {
     event: "pre-tool-use",

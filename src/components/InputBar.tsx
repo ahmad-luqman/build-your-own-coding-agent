@@ -1,6 +1,5 @@
-import React from "react";
-import { Box, Text } from "ink";
 import { TextInput } from "@inkjs/ui";
+import { Box, Text } from "ink";
 
 interface Props {
   onSubmit: (text: string) => void;
@@ -18,11 +17,10 @@ export function InputBar({ onSubmit, isLoading }: Props) {
 
   return (
     <Box paddingX={1}>
-      <Text bold color="cyan">&gt; </Text>
-      <TextInput
-        placeholder="Ask me anything..."
-        onSubmit={onSubmit}
-      />
+      <Text bold color="cyan">
+        &gt;{" "}
+      </Text>
+      <TextInput placeholder="Ask me anything..." onSubmit={onSubmit} />
     </Box>
   );
 }
