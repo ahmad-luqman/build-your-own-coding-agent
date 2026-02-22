@@ -7,7 +7,9 @@ interface Props {
 }
 
 function formatTimeAgo(isoDate: string): string {
-  const diff = Date.now() - new Date(isoDate).getTime();
+  const date = new Date(isoDate);
+  if (Number.isNaN(date.getTime())) return "unknown";
+  const diff = Date.now() - date.getTime();
   const minutes = Math.floor(diff / 60_000);
   if (minutes < 1) return "just now";
   if (minutes < 60) return `${minutes}m ago`;

@@ -1,5 +1,5 @@
 import { mkdir, readdir, readFile, unlink, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import type { SessionFile, SessionListEntry, SessionMetadata, SessionState } from "./types.js";
 
 const DEFAULT_MAX_SESSIONS = 20;
@@ -10,6 +10,7 @@ export async function ensureSessionsDir(dir: string): Promise<void> {
 
 function formatTimestamp(date: Date): string {
   const pad = (n: number) => String(n).padStart(2, "0");
+  const pad3 = (n: number) => String(n).padStart(3, "0");
   return [
     date.getFullYear(),
     "-",
@@ -22,6 +23,8 @@ function formatTimestamp(date: Date): string {
     pad(date.getMinutes()),
     "-",
     pad(date.getSeconds()),
+    "-",
+    pad3(date.getMilliseconds()),
   ].join("");
 }
 
@@ -43,7 +46,8 @@ export async function saveSession(
   await ensureSessionsDir(dir);
 
   const now = new Date();
-  const filename = `${formatTimestamp(now)}.json`;
+  const suffix = crypto.randomUUID().slice(0, 4);
+  const filename = `${formatTimestamp(now)}-${suffix}.json`;
   const filepath = join(dir, filename);
 
   const metadata: SessionMetadata = {
@@ -63,17 +67,32 @@ export async function saveSession(
   };
 
   await writeFile(filepath, JSON.stringify(sessionFile, null, 2), "utf-8");
-  await pruneOldSessions(dir);
+  try {
+    await pruneOldSessions(dir);
+  } catch {
+    // Pruning is best-effort housekeeping
+  }
 
   return filename;
 }
 
 export async function loadSession(dir: string, filename: string): Promise<SessionFile> {
-  const filepath = join(dir, filename);
+  const filepath = resolve(dir, filename);
+  if (!filepath.startsWith(resolve(dir))) {
+    throw new Error(`Invalid session filename: ${filename}`);
+  }
+
   const raw = await readFile(filepath, "utf-8");
 
   const parsed = JSON.parse(raw);
-  if (!parsed || parsed.version !== 1 || !parsed.metadata || !parsed.state) {
+  if (
+    !parsed ||
+    parsed.version !== 1 ||
+    !parsed.metadata ||
+    !parsed.state ||
+    !Array.isArray(parsed.state.messages) ||
+    !Array.isArray(parsed.state.displayMessages)
+  ) {
     throw new Error(`Invalid session file: ${filename}`);
   }
 
@@ -97,8 +116,11 @@ export async function listSessions(dir: string): Promise<SessionListEntry[]> {
       if (parsed?.version === 1 && parsed.metadata) {
         entries.push({ ...parsed.metadata, filename });
       }
-    } catch {
-      // Skip corrupt files silently
+    } catch (err) {
+      console.error(
+        `Skipping unreadable session: ${filename}:`,
+        err instanceof Error ? err.message : err,
+      );
     }
   }
 

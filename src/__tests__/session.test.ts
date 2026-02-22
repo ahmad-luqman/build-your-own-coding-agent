@@ -51,7 +51,7 @@ describe("session persistence", () => {
       const state = makeState();
       const filename = await saveSession(dir, state, saveOpts);
 
-      expect(filename).toMatch(/^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.json$/);
+      expect(filename).toMatch(/^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}-\d{3}-[a-f0-9]{4}\.json$/);
 
       const raw = await readFile(join(dir, filename), "utf-8");
       const parsed = JSON.parse(raw);
@@ -76,6 +76,14 @@ describe("session persistence", () => {
         "Cannot save an empty session",
       );
     });
+
+    test("generates unique filenames with millisecond precision", async () => {
+      const filename1 = await saveSession(dir, makeState(), saveOpts);
+      const filename2 = await saveSession(dir, makeState(), saveOpts);
+      expect(filename1).not.toBe(filename2);
+      expect(filename1).toMatch(/^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}-\d{3}-[a-f0-9]{4}\.json$/);
+      expect(filename2).toMatch(/^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}-\d{3}-[a-f0-9]{4}\.json$/);
+    });
   });
 
   describe("loadSession", () => {
@@ -98,6 +106,53 @@ describe("session persistence", () => {
     test("throws on invalid structure", async () => {
       await writeFile(join(dir, "invalid.json"), JSON.stringify({ version: 2 }), "utf-8");
       expect(loadSession(dir, "invalid.json")).rejects.toThrow("Invalid session file");
+    });
+
+    test("rejects path traversal attempts", async () => {
+      expect(loadSession(dir, "../../etc/passwd")).rejects.toThrow("Invalid session filename");
+      expect(loadSession(dir, "../.env")).rejects.toThrow("Invalid session filename");
+    });
+
+    test("throws when state.messages is not an array", async () => {
+      await writeFile(
+        join(dir, "bad-state.json"),
+        JSON.stringify({
+          version: 1,
+          metadata: {
+            id: "1",
+            name: "x",
+            createdAt: "",
+            updatedAt: "",
+            modelId: "m",
+            messageCount: 0,
+            cwd: "/",
+          },
+          state: { messages: "not-array", displayMessages: [], totalUsage: {} },
+        }),
+        "utf-8",
+      );
+      expect(loadSession(dir, "bad-state.json")).rejects.toThrow("Invalid session file");
+    });
+
+    test("throws when state.displayMessages is not an array", async () => {
+      await writeFile(
+        join(dir, "bad-display.json"),
+        JSON.stringify({
+          version: 1,
+          metadata: {
+            id: "1",
+            name: "x",
+            createdAt: "",
+            updatedAt: "",
+            modelId: "m",
+            messageCount: 0,
+            cwd: "/",
+          },
+          state: { messages: [], displayMessages: {}, totalUsage: {} },
+        }),
+        "utf-8",
+      );
+      expect(loadSession(dir, "bad-display.json")).rejects.toThrow("Invalid session file");
     });
   });
 

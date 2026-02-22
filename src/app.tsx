@@ -72,32 +72,32 @@ export function App({ config, model, tools }: Props) {
   const saveCurrentSession = useCallback(
     async (name?: string) => {
       if (messagesRef.current.length === 0) return;
-      try {
-        await saveSession(
-          config.sessionsDir,
-          {
-            messages: messagesRef.current,
-            displayMessages: displayMessagesRef.current,
-            totalUsage: totalUsageRef.current,
-          },
-          { name, modelId: config.modelId, cwd: config.cwd },
-        );
-      } catch {
-        // Best-effort save — don't crash the app
-      }
+      await saveSession(
+        config.sessionsDir,
+        {
+          messages: messagesRef.current,
+          displayMessages: displayMessagesRef.current,
+          totalUsage: totalUsageRef.current,
+        },
+        { name, modelId: config.modelId, cwd: config.cwd },
+      );
     },
     [config.sessionsDir, config.modelId, config.cwd],
   );
 
   // Check for resumable session on startup
   useEffect(() => {
-    getMostRecentSession(config.sessionsDir).then((entry) => {
-      if (entry) {
-        setResumeCandidate(entry);
-      } else {
+    getMostRecentSession(config.sessionsDir)
+      .then((entry) => {
+        if (entry) {
+          setResumeCandidate(entry);
+        } else {
+          setPhase("active");
+        }
+      })
+      .catch(() => {
         setPhase("active");
-      }
-    });
+      });
   }, [config.sessionsDir]);
 
   const handleResumeDecision = useCallback(
@@ -108,8 +108,14 @@ export function App({ config, model, tools }: Props) {
           setMessages(session.state.messages);
           setDisplayMessages(session.state.displayMessages);
           setTotalUsage(session.state.totalUsage);
-        } catch {
-          // Failed to load — start fresh
+        } catch (err) {
+          const errorMsg: DisplayMessage = {
+            id: crypto.randomUUID(),
+            role: "assistant",
+            content: `Failed to resume session: ${err instanceof Error ? err.message : String(err)}. Starting fresh.`,
+            timestamp: Date.now(),
+          };
+          setDisplayMessages([errorMsg]);
         }
       }
       setResumeCandidate(null);
@@ -120,7 +126,9 @@ export function App({ config, model, tools }: Props) {
 
   useInput((input: string, key: { ctrl: boolean }) => {
     if (input === "c" && key.ctrl) {
-      saveCurrentSession().finally(() => exit());
+      saveCurrentSession()
+        .catch(() => {})
+        .finally(() => exit());
     }
   });
 
@@ -141,12 +149,12 @@ export function App({ config, model, tools }: Props) {
       const trimmed = text.trim();
 
       if (trimmed === "/exit" || trimmed === "/quit") {
-        await saveCurrentSession();
+        await saveCurrentSession().catch(() => {});
         exit();
         return;
       }
 
-      if (trimmed.startsWith("/save")) {
+      if (trimmed === "/save" || trimmed.startsWith("/save ")) {
         const name = trimmed.slice(5).trim() || undefined;
         try {
           await saveCurrentSession(name);
@@ -156,7 +164,7 @@ export function App({ config, model, tools }: Props) {
             content: `Session saved${name ? ` as "${name}"` : ""}.`,
             timestamp: Date.now(),
           };
-          setDisplayMessages((prev: DisplayMessage[]) => [...prev, confirmMsg]);
+          setDisplayMessages((prev) => [...prev, confirmMsg]);
         } catch (err) {
           const errorMsg: DisplayMessage = {
             id: crypto.randomUUID(),
@@ -164,7 +172,7 @@ export function App({ config, model, tools }: Props) {
             content: `Failed to save session: ${err instanceof Error ? err.message : String(err)}`,
             timestamp: Date.now(),
           };
-          setDisplayMessages((prev: DisplayMessage[]) => [...prev, errorMsg]);
+          setDisplayMessages((prev) => [...prev, errorMsg]);
         }
         return;
       }
@@ -179,7 +187,7 @@ export function App({ config, model, tools }: Props) {
               content: "No saved sessions.",
               timestamp: Date.now(),
             };
-            setDisplayMessages((prev: DisplayMessage[]) => [...prev, msg]);
+            setDisplayMessages((prev) => [...prev, msg]);
           } else {
             const lines = sessions.map(
               (s, i) =>
@@ -191,21 +199,21 @@ export function App({ config, model, tools }: Props) {
               content: `Saved sessions:\n${lines.join("\n")}`,
               timestamp: Date.now(),
             };
-            setDisplayMessages((prev: DisplayMessage[]) => [...prev, msg]);
+            setDisplayMessages((prev) => [...prev, msg]);
           }
-        } catch {
+        } catch (err) {
           const msg: DisplayMessage = {
             id: crypto.randomUUID(),
             role: "assistant",
-            content: "Failed to list sessions.",
+            content: `Failed to list sessions: ${err instanceof Error ? err.message : String(err)}`,
             timestamp: Date.now(),
           };
-          setDisplayMessages((prev: DisplayMessage[]) => [...prev, msg]);
+          setDisplayMessages((prev) => [...prev, msg]);
         }
         return;
       }
 
-      if (trimmed.startsWith("/load")) {
+      if (trimmed === "/load" || trimmed.startsWith("/load ")) {
         const arg = trimmed.slice(5).trim();
         if (!arg) {
           const msg: DisplayMessage = {
@@ -214,13 +222,13 @@ export function App({ config, model, tools }: Props) {
             content: "Usage: `/load <number>` or `/load <filename>`",
             timestamp: Date.now(),
           };
-          setDisplayMessages((prev: DisplayMessage[]) => [...prev, msg]);
+          setDisplayMessages((prev) => [...prev, msg]);
           return;
         }
 
         try {
           let filename = arg;
-          const index = Number.parseInt(arg, 10);
+          const index = /^\d+$/.test(arg) ? Number.parseInt(arg, 10) : Number.NaN;
           if (!Number.isNaN(index)) {
             const sessions = await listSessions(config.sessionsDir);
             if (index < 1 || index > sessions.length) {
@@ -240,7 +248,7 @@ export function App({ config, model, tools }: Props) {
             content: `Loaded session: ${session.metadata.name}`,
             timestamp: Date.now(),
           };
-          setDisplayMessages((prev: DisplayMessage[]) => [...prev, msg]);
+          setDisplayMessages((prev) => [...prev, msg]);
         } catch (err) {
           const msg: DisplayMessage = {
             id: crypto.randomUUID(),
@@ -248,7 +256,7 @@ export function App({ config, model, tools }: Props) {
             content: `Failed to load session: ${err instanceof Error ? err.message : String(err)}`,
             timestamp: Date.now(),
           };
-          setDisplayMessages((prev: DisplayMessage[]) => [...prev, msg]);
+          setDisplayMessages((prev) => [...prev, msg]);
         }
         return;
       }
@@ -263,7 +271,7 @@ export function App({ config, model, tools }: Props) {
         content: text,
         timestamp: Date.now(),
       };
-      setDisplayMessages((prev: DisplayMessage[]) => [...prev, userDisplay]);
+      setDisplayMessages((prev) => [...prev, userDisplay]);
       setIsLoading(true);
       setStreamingText("");
 
@@ -309,7 +317,7 @@ export function App({ config, model, tools }: Props) {
             }
 
             case "finish":
-              setTotalUsage((prev: TokenUsage) => ({
+              setTotalUsage((prev) => ({
                 inputTokens: prev.inputTokens + event.usage.inputTokens,
                 outputTokens: prev.outputTokens + event.usage.outputTokens,
                 totalTokens: prev.totalTokens + event.usage.totalTokens,
@@ -333,7 +341,7 @@ export function App({ config, model, tools }: Props) {
           toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
           timestamp: Date.now(),
         };
-        setDisplayMessages((prev: DisplayMessage[]) => [...prev, assistantDisplay]);
+        setDisplayMessages((prev) => [...prev, assistantDisplay]);
       }
 
       setMessages(newMessages);
