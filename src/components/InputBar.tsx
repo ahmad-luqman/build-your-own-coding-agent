@@ -1,15 +1,26 @@
 import { TextInput } from "@inkjs/ui";
 import { Box, Text } from "ink";
 import { useMemo, useState } from "react";
+import type { ProgressState } from "../progress.js";
 import type { CommandDefinition } from "../types.js";
+
+function formatProgressText(progress?: ProgressState): string {
+  if (!progress || progress.currentTurn === 0) {
+    return "⏳ Thinking...";
+  }
+  const turn = `Turn ${progress.currentTurn}/${progress.maxTurns}`;
+  const status = progress.activeTool ? `Running ${progress.activeTool}...` : "Thinking...";
+  return `⏳ ${turn} | ${status}`;
+}
 
 interface Props {
   onSubmit: (text: string) => void;
   isLoading: boolean;
   commands?: Map<string, CommandDefinition>;
+  progress?: ProgressState;
 }
 
-export function InputBar({ onSubmit, isLoading, commands }: Props) {
+export function InputBar({ onSubmit, isLoading, commands, progress }: Props) {
   const [inputValue, setInputValue] = useState("");
 
   const suggestions = useMemo(() => {
@@ -33,7 +44,7 @@ export function InputBar({ onSubmit, isLoading, commands }: Props) {
   if (isLoading) {
     return (
       <Box paddingX={1}>
-        <Text color="yellow">⏳ Thinking...</Text>
+        <Text color="yellow">{formatProgressText(progress)}</Text>
       </Box>
     );
   }

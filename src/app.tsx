@@ -13,6 +13,7 @@ import { createDangerousCommandGuard } from "./hooks/dangerous-command-guard.js"
 import { HookManager } from "./hooks/manager.js";
 import type { AgentModel } from "./model.js";
 import { createModel } from "./model.js";
+import { INITIAL_PROGRESS, type ProgressState, progressReducer } from "./progress.js";
 import { getMostRecentSession, saveSession } from "./session.js";
 import type {
   AgentConfig,
@@ -56,6 +57,7 @@ export function App({ config, model: initialModel, tools }: Props) {
   const [currentModel, setCurrentModel] = useState<AgentModel>(initialModel);
   const [currentModelId, setCurrentModelId] = useState(config.modelId);
   const [lastInputTokens, setLastInputTokens] = useState(0);
+  const [progress, setProgress] = useState<ProgressState>(INITIAL_PROGRESS);
 
   const commandRegistry = useMemo(() => createCommandRegistry(), []);
 
@@ -274,6 +276,7 @@ export function App({ config, model: initialModel, tools }: Props) {
 
       let assistantText = "";
       const toolCalls: NonNullable<DisplayMessage["toolCalls"]> = [];
+      let currentProgress = INITIAL_PROGRESS;
 
       // Create onPreToolUse that delegates to the hook manager
       const onPreToolUse = hookManagerRef.current
@@ -294,7 +297,13 @@ export function App({ config, model: initialModel, tools }: Props) {
         });
 
         for await (const event of stream) {
+          currentProgress = progressReducer(currentProgress, event);
+          setProgress(currentProgress);
+
           switch (event.type) {
+            case "turn-start":
+              break;
+
             case "text-delta":
               assistantText += event.text;
               setStreamingText(assistantText);
@@ -350,6 +359,7 @@ export function App({ config, model: initialModel, tools }: Props) {
       setMessages(newMessages);
       setStreamingText("");
       setIsLoading(false);
+      setProgress(INITIAL_PROGRESS);
     },
     [
       messages,
@@ -395,7 +405,12 @@ export function App({ config, model: initialModel, tools }: Props) {
           onDecision={handleApprovalDecision}
         />
       ) : (
-        <InputBar onSubmit={handleSubmit} isLoading={isLoading} commands={commandRegistry} />
+        <InputBar
+          onSubmit={handleSubmit}
+          isLoading={isLoading}
+          commands={commandRegistry}
+          progress={progress}
+        />
       )}
     </Box>
   );
