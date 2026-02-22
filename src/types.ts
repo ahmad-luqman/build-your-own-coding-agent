@@ -122,6 +122,15 @@ export interface SessionListEntry extends SessionMetadata {
   filename: string;
 }
 
+// --- Context Compaction ---
+
+export interface CompactionResult {
+  messages: ModelMessage[];
+  displayMessages: DisplayMessage[];
+  compacted: boolean;
+  summary?: string;
+}
+
 // --- Slash Commands ---
 
 export interface CommandContext {
@@ -132,6 +141,7 @@ export interface CommandContext {
   setTotalUsage: (usage: TokenUsage) => void;
   saveSession: (name?: string) => Promise<void>;
   setModel: (modelId: string) => void;
+  compactMessages?: () => Promise<CompactionResult>;
   exit: () => void;
 }
 
