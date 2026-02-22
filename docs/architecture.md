@@ -9,7 +9,8 @@
 loadConfig()           createModel()         createToolRegistry()
    |                     |                        |
    v                     v                        v
-AgentConfig         OpenRouter Provider      Map<name, ToolDefinition>
+AgentConfig         Model Provider           Map<name, ToolDefinition>
+                    (OpenRouter / Ollama)
    |                     |                        |
    +---------------------+------------------------+
                          |
@@ -21,7 +22,7 @@ AgentConfig         OpenRouter Provider      Map<name, ToolDefinition>
          StatusBar   MessageList   InputBar / ApprovalPrompt
 ```
 
-The entry point (`src/index.tsx`) is 14 lines. It loads config from env vars, creates the OpenRouter model, builds the tool registry, and renders the Ink `<App>` component with all three as props.
+The entry point (`src/index.tsx`) is 14 lines. It loads config from env vars, creates the model via the multi-provider factory (OpenRouter or Ollama), builds the tool registry, and renders the Ink `<App>` component with all three as props.
 
 ## Agent Loop
 
@@ -223,7 +224,7 @@ The `<App>` component manages:
 src/
   index.tsx              Entry point (14 lines)
   config.ts              loadConfig() + system prompt
-  model.ts               createModel() via OpenRouter
+  model.ts               createModel() multi-provider factory
   agent.ts               runAgent() async generator
   app.tsx                 Main App component (state machine)
   types.ts               All shared type definitions
@@ -244,3 +245,7 @@ src/
     InputBar.tsx
     ApprovalPrompt.tsx
 ```
+
+## What's Next
+
+See [future-architecture.md](future-architecture.md) for how the system evolves across the [roadmap](roadmap.md) phases, with detailed ASCII diagrams for session management, plugin system, MCP integration, context window compaction, and the full future data flow.
