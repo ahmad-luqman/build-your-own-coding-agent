@@ -65,6 +65,7 @@ export interface AgentConfig {
   systemPrompt: string;
   cwd: string;
   maxTurns: number;
+  sessionsDir: string;
 }
 
 // --- Token Tracking ---
@@ -99,4 +100,24 @@ export interface SessionState {
   messages: ModelMessage[];
   displayMessages: DisplayMessage[];
   totalUsage: TokenUsage;
+}
+
+export interface SessionMetadata {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+  modelId: string;
+  messageCount: number;
+  cwd: string;
+}
+
+export interface SessionFile {
+  version: 1;
+  metadata: SessionMetadata;
+  state: SessionState;
+}
+
+export interface SessionListEntry extends SessionMetadata {
+  filename: string;
 }
