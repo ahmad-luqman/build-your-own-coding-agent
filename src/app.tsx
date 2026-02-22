@@ -8,6 +8,7 @@ import { InputBar } from "./components/InputBar.js";
 import { MessageList } from "./components/MessageList.js";
 import { SessionResumePrompt } from "./components/SessionResumePrompt.js";
 import { StatusBar } from "./components/StatusBar.js";
+import { compactMessages, getCompactionThreshold, getContextWindowLimit } from "./context/index.js";
 import { createDangerousCommandGuard } from "./hooks/dangerous-command-guard.js";
 import { HookManager } from "./hooks/manager.js";
 import type { AgentModel } from "./model.js";
@@ -16,6 +17,7 @@ import { getMostRecentSession, saveSession } from "./session.js";
 import type {
   AgentConfig,
   CommandContext,
+  CompactionResult,
   DisplayMessage,
   HookDecision,
   SessionListEntry,
@@ -53,6 +55,7 @@ export function App({ config, model: initialModel, tools }: Props) {
   // Model switching state
   const [currentModel, setCurrentModel] = useState<AgentModel>(initialModel);
   const [currentModelId, setCurrentModelId] = useState(config.modelId);
+  const [lastInputTokens, setLastInputTokens] = useState(0);
 
   const commandRegistry = useMemo(() => createCommandRegistry(), []);
 
@@ -95,6 +98,22 @@ export function App({ config, model: initialModel, tools }: Props) {
     },
     [config.sessionsDir, config.cwd],
   );
+
+  // Shared compaction logic for both auto and manual compaction
+  const compactConversation = useCallback(async (): Promise<CompactionResult> => {
+    const result = await compactMessages({
+      model: currentModel,
+      messages: messagesRef.current,
+      displayMessages: displayMessagesRef.current,
+    });
+
+    if (result.compacted) {
+      setMessages(result.messages);
+      setDisplayMessages(result.displayMessages);
+    }
+
+    return result;
+  }, [currentModel]);
 
   // Check for resumable session on startup
   useEffect(() => {
@@ -188,6 +207,7 @@ export function App({ config, model: initialModel, tools }: Props) {
             setCurrentModel(newModel);
             setCurrentModelId(modelId);
           },
+          compactMessages: compactConversation,
           exit,
         };
 
@@ -226,7 +246,7 @@ export function App({ config, model: initialModel, tools }: Props) {
       }
 
       const userMsg: ModelMessage = { role: "user", content: text };
-      const newMessages = [...messages, userMsg];
+      let newMessages = [...messages, userMsg];
       setMessages(newMessages);
 
       const userDisplay: DisplayMessage = {
@@ -238,6 +258,19 @@ export function App({ config, model: initialModel, tools }: Props) {
       setDisplayMessages((prev) => [...prev, userDisplay]);
       setIsLoading(true);
       setStreamingText("");
+
+      // Auto-compaction: if last turn's input tokens exceeded threshold, compact
+      const threshold = getCompactionThreshold(currentModelIdRef.current);
+      if (lastInputTokens > threshold && newMessages.length > 8) {
+        try {
+          const compResult = await compactConversation();
+          if (compResult.compacted) {
+            newMessages = compResult.messages;
+          }
+        } catch {
+          // Compaction failure is non-fatal — continue with original messages
+        }
+      }
 
       let assistantText = "";
       const toolCalls: NonNullable<DisplayMessage["toolCalls"]> = [];
@@ -286,6 +319,7 @@ export function App({ config, model: initialModel, tools }: Props) {
             }
 
             case "finish":
+              setLastInputTokens(event.usage.inputTokens);
               setTotalUsage((prev) => ({
                 inputTokens: prev.inputTokens + event.usage.inputTokens,
                 outputTokens: prev.outputTokens + event.usage.outputTokens,
@@ -317,13 +351,29 @@ export function App({ config, model: initialModel, tools }: Props) {
       setStreamingText("");
       setIsLoading(false);
     },
-    [messages, isLoading, currentModel, config, tools, exit, saveCurrentSession, commandRegistry],
+    [
+      messages,
+      isLoading,
+      currentModel,
+      config,
+      tools,
+      exit,
+      saveCurrentSession,
+      commandRegistry,
+      lastInputTokens,
+      compactConversation,
+    ],
   );
 
   if (phase === "init" && resumeCandidate) {
     return (
       <Box flexDirection="column" height="100%">
-        <StatusBar modelId={currentModelId} usage={totalUsage} />
+        <StatusBar
+          modelId={currentModelId}
+          usage={totalUsage}
+          lastInputTokens={lastInputTokens}
+          contextLimit={getContextWindowLimit(currentModelId)}
+        />
         <SessionResumePrompt session={resumeCandidate} onDecision={handleResumeDecision} />
       </Box>
     );
@@ -331,7 +381,12 @@ export function App({ config, model: initialModel, tools }: Props) {
 
   return (
     <Box flexDirection="column" height="100%">
-      <StatusBar modelId={currentModelId} usage={totalUsage} />
+      <StatusBar
+        modelId={currentModelId}
+        usage={totalUsage}
+        lastInputTokens={lastInputTokens}
+        contextLimit={getContextWindowLimit(currentModelId)}
+      />
       <MessageList messages={displayMessages} streamingText={streamingText} />
       {pendingApproval ? (
         <ApprovalPrompt

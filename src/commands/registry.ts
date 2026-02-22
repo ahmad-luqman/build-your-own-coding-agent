@@ -1,5 +1,6 @@
 import type { CommandDefinition } from "../types.js";
 import { clearCommand } from "./clear.js";
+import { compactCommand } from "./compact.js";
 import { costCommand } from "./cost.js";
 import { exitCommand } from "./exit.js";
 import { createHelpCommand } from "./help.js";
@@ -13,6 +14,7 @@ export function createCommandRegistry(): Map<string, CommandDefinition> {
 
   const allCommands = [
     clearCommand,
+    compactCommand,
     costCommand,
     exitCommand,
     loadCommand,

@@ -18,6 +18,11 @@ export function makeCtx(overrides: Partial<CommandContext> = {}): CommandContext
     setTotalUsage: mock(() => {}),
     saveSession: mock(async () => {}),
     setModel: mock(() => {}),
+    compactMessages: mock(async () => ({
+      messages: [],
+      displayMessages: [],
+      compacted: false,
+    })),
     exit: mock(() => {}),
     ...overrides,
   };
