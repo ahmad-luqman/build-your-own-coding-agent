@@ -5,7 +5,13 @@ export const exitCommand: CommandDefinition = {
   description: "Save session and exit",
   aliases: ["quit"],
   async execute(_args, ctx) {
-    await ctx.saveSession().catch(() => {});
+    try {
+      await ctx.saveSession();
+    } catch (err) {
+      return {
+        error: `Session could not be saved: ${err instanceof Error ? err.message : String(err)}. Use /save to retry or /exit again to quit without saving.`,
+      };
+    }
     ctx.exit();
     return {};
   },

@@ -1,9 +1,10 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { CommandContext, SessionFile } from "../../types.js";
+import type { SessionFile } from "../../types.js";
 import { sessionsCommand } from "../sessions.js";
+import { makeCtx as makeBaseCtx } from "./test-helpers.js";
 
 function makeSession(name: string, messageCount: number): SessionFile {
   return {
@@ -37,27 +38,8 @@ describe("sessionsCommand", () => {
     rmSync(testDir, { recursive: true, force: true });
   });
 
-  function makeCtx(overrides: Partial<CommandContext> = {}): CommandContext {
-    return {
-      config: {
-        provider: "openrouter",
-        modelId: "test-model",
-        apiKey: "key",
-        systemPrompt: "",
-        cwd: "/tmp",
-        maxTurns: 10,
-        sessionsDir: testDir,
-      },
-      setMessages: mock(() => {}),
-      setDisplayMessages: mock(() => {}),
-      totalUsage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
-      setTotalUsage: mock(() => {}),
-      saveSession: mock(async () => {}),
-      setModel: mock(() => {}),
-      exit: mock(() => {}),
-      ...overrides,
-    };
-  }
+  const makeCtx = (overrides = {}) =>
+    makeBaseCtx({ config: { ...makeBaseCtx().config, sessionsDir: testDir }, ...overrides });
 
   test("has correct name", () => {
     expect(sessionsCommand.name).toBe("sessions");

@@ -15,14 +15,19 @@ export function InputBar({ onSubmit, isLoading, commands }: Props) {
   const suggestions = useMemo(() => {
     if (!commands || !inputValue.startsWith("/")) return undefined;
 
-    const partial = inputValue.slice(1).toLowerCase();
-    if (!partial) {
-      return [...commands.keys()].map((name) => `/${name}`);
+    // Deduplicate: only use canonical command names, not alias keys
+    const uniqueNames = new Set<string>();
+    for (const cmd of commands.values()) {
+      uniqueNames.add(cmd.name);
     }
 
-    return [...commands.keys()]
-      .filter((name) => name.startsWith(partial))
-      .map((name) => `/${name}`);
+    const partial = inputValue.slice(1).toLowerCase();
+    const names = [...uniqueNames];
+    if (!partial) {
+      return names.map((name) => `/${name}`);
+    }
+
+    return names.filter((name) => name.startsWith(partial)).map((name) => `/${name}`);
   }, [inputValue, commands]);
 
   if (isLoading) {

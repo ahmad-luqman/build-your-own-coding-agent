@@ -1,28 +1,6 @@
 import { describe, expect, mock, test } from "bun:test";
-import type { CommandContext } from "../../types.js";
 import { modelCommand } from "../model.js";
-
-function makeCtx(overrides: Partial<CommandContext> = {}): CommandContext {
-  return {
-    config: {
-      provider: "openrouter",
-      modelId: "anthropic/claude-sonnet-4",
-      apiKey: "key",
-      systemPrompt: "",
-      cwd: "/tmp",
-      maxTurns: 10,
-      sessionsDir: "/tmp/sessions",
-    },
-    setMessages: mock(() => {}),
-    setDisplayMessages: mock(() => {}),
-    totalUsage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
-    setTotalUsage: mock(() => {}),
-    saveSession: mock(async () => {}),
-    setModel: mock(() => {}),
-    exit: mock(() => {}),
-    ...overrides,
-  };
-}
+import { makeCtx } from "./test-helpers.js";
 
 describe("modelCommand", () => {
   test("has correct name and usage", () => {
@@ -34,7 +12,7 @@ describe("modelCommand", () => {
     const ctx = makeCtx();
     const result = modelCommand.execute("", ctx);
     const msg = (result as { message: string }).message;
-    expect(msg).toContain("anthropic/claude-sonnet-4");
+    expect(msg).toContain("test-model");
   });
 
   test("switches model when arg provided", () => {
@@ -59,5 +37,16 @@ describe("modelCommand", () => {
     const ctx = makeCtx({ setModel });
     modelCommand.execute("  openai/gpt-4  ", ctx);
     expect(setModel).toHaveBeenCalledWith("openai/gpt-4");
+  });
+
+  test("returns error when setModel throws", () => {
+    const setModel = mock(() => {
+      throw new Error("Invalid provider: unknown");
+    });
+    const ctx = makeCtx({ setModel });
+    const result = modelCommand.execute("bad/model-id", ctx);
+    expect(result).toHaveProperty("error");
+    expect((result as { error: string }).error).toContain("Invalid provider");
+    expect((result as { error: string }).error).toContain("Failed to switch model");
   });
 });

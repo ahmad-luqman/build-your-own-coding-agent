@@ -125,7 +125,7 @@ export interface SessionListEntry extends SessionMetadata {
 // --- Slash Commands ---
 
 export interface CommandContext {
-  config: AgentConfig;
+  config: Readonly<AgentConfig>;
   setMessages: (msgs: ModelMessage[]) => void;
   setDisplayMessages: (updater: (prev: DisplayMessage[]) => DisplayMessage[]) => void;
   totalUsage: TokenUsage;

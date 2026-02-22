@@ -191,22 +191,33 @@ export function App({ config, model: initialModel, tools }: Props) {
           exit,
         };
 
-        const result = await cmd.execute(rest.join(" "), commandCtx);
-
-        if (result.message) {
+        let result: import("./types.js").CommandResult;
+        try {
+          result = await cmd.execute(rest.join(" "), commandCtx);
+        } catch (err) {
           const msg: DisplayMessage = {
             id: crypto.randomUUID(),
             role: "assistant",
-            content: result.message,
+            content: `Command /${cmdName} failed: ${err instanceof Error ? err.message : String(err)}`,
             timestamp: Date.now(),
           };
           setDisplayMessages((prev) => [...prev, msg]);
+          return;
         }
+
         if (result.error) {
           const msg: DisplayMessage = {
             id: crypto.randomUUID(),
             role: "assistant",
             content: result.error,
+            timestamp: Date.now(),
+          };
+          setDisplayMessages((prev) => [...prev, msg]);
+        } else if (result.message) {
+          const msg: DisplayMessage = {
+            id: crypto.randomUUID(),
+            role: "assistant",
+            content: result.message,
             timestamp: Date.now(),
           };
           setDisplayMessages((prev) => [...prev, msg]);

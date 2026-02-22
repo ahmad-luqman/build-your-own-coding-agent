@@ -2,8 +2,9 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { CommandContext, SessionFile } from "../../types.js";
+import type { SessionFile } from "../../types.js";
 import { loadCommand } from "../load.js";
+import { makeCtx as makeBaseCtx } from "./test-helpers.js";
 
 function makeSession(name: string): SessionFile {
   return {
@@ -37,27 +38,8 @@ describe("loadCommand", () => {
     rmSync(testDir, { recursive: true, force: true });
   });
 
-  function makeCtx(overrides: Partial<CommandContext> = {}): CommandContext {
-    return {
-      config: {
-        provider: "openrouter",
-        modelId: "test-model",
-        apiKey: "key",
-        systemPrompt: "",
-        cwd: "/tmp",
-        maxTurns: 10,
-        sessionsDir: testDir,
-      },
-      setMessages: mock(() => {}),
-      setDisplayMessages: mock(() => {}),
-      totalUsage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
-      setTotalUsage: mock(() => {}),
-      saveSession: mock(async () => {}),
-      setModel: mock(() => {}),
-      exit: mock(() => {}),
-      ...overrides,
-    };
-  }
+  const makeCtx = (overrides = {}) =>
+    makeBaseCtx({ config: { ...makeBaseCtx().config, sessionsDir: testDir }, ...overrides });
 
   test("has correct name and usage", () => {
     expect(loadCommand.name).toBe("load");
@@ -123,5 +105,20 @@ describe("loadCommand", () => {
     const result = await loadCommand.execute("nonexistent.json", ctx);
 
     expect(result.error).toContain("Failed to load session");
+  });
+
+  test("restores model from session metadata", async () => {
+    const session = makeSession("Model Restore Session");
+    session.metadata.modelId = "google/gemini-pro";
+    const filename = "model-restore.json";
+    writeFileSync(join(testDir, filename), JSON.stringify(session));
+
+    const setModel = mock(() => {});
+    const ctx = makeCtx({ setModel });
+
+    const result = await loadCommand.execute(filename, ctx);
+
+    expect(result.message).toContain("Model Restore Session");
+    expect(setModel).toHaveBeenCalledWith("google/gemini-pro");
   });
 });

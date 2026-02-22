@@ -36,4 +36,18 @@ describe("createCommandRegistry", () => {
     expect(helpCmd).toBeDefined();
     expect(helpCmd!.name).toBe("help");
   });
+
+  test("alias keys point to same object as canonical name", () => {
+    const exitCmd = registry.get("exit");
+    const quitCmd = registry.get("quit");
+    // Same object reference — not a copy
+    expect(quitCmd).toBe(exitCmd);
+    expect(exitCmd!.name).toBe("exit");
+  });
+
+  test("unique command count excludes alias duplicates", () => {
+    const uniqueCommands = new Set(registry.values());
+    // quit is an alias for exit, so unique count should be less than keys count
+    expect(uniqueCommands.size).toBeLessThan(registry.size);
+  });
 });

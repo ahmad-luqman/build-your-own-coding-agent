@@ -27,6 +27,10 @@ export const loadCommand: CommandDefinition = {
       ctx.setDisplayMessages(() => session.state.displayMessages);
       ctx.setTotalUsage(session.state.totalUsage);
 
+      if (session.metadata.modelId) {
+        ctx.setModel(session.metadata.modelId);
+      }
+
       return { message: `Loaded session: ${session.metadata.name}` };
     } catch (err) {
       return {

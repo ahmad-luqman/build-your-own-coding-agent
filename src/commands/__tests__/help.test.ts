@@ -54,4 +54,24 @@ describe("helpCommand", () => {
 
     expect(msg).toContain("Available commands");
   });
+
+  test("deduplicates aliased commands", () => {
+    const reg = new Map<string, CommandDefinition>();
+    const exitCmd: CommandDefinition = {
+      name: "exit",
+      description: "Exit the app",
+      aliases: ["quit"],
+      execute: () => ({}),
+    };
+    reg.set("exit", exitCmd);
+    reg.set("quit", exitCmd); // same object reference (alias)
+
+    const helpCmd = createHelpCommand(reg);
+    const result = helpCmd.execute("", {} as any);
+    const msg = (result as { message: string }).message;
+
+    // "exit" should appear exactly once, not twice
+    const exitMatches = msg.match(/Exit the app/g);
+    expect(exitMatches).toHaveLength(1);
+  });
 });

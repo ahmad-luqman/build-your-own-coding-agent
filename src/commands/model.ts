@@ -10,7 +10,13 @@ export const modelCommand: CommandDefinition = {
       return { message: `Current model: \`${ctx.config.modelId}\`` };
     }
 
-    ctx.setModel(newModelId);
+    try {
+      ctx.setModel(newModelId);
+    } catch (err) {
+      return {
+        error: `Failed to switch model: ${err instanceof Error ? err.message : String(err)}`,
+      };
+    }
     return { message: `Model switched to \`${newModelId}\`` };
   },
 };
