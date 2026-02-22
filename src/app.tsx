@@ -1,7 +1,8 @@
 import type { ModelMessage } from "ai";
 import { Box, useApp, useInput } from "ink";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { runAgent } from "./agent.js";
+import { createCommandRegistry } from "./commands/registry.js";
 import { ApprovalPrompt } from "./components/ApprovalPrompt.js";
 import { InputBar } from "./components/InputBar.js";
 import { MessageList } from "./components/MessageList.js";
@@ -10,9 +11,11 @@ import { StatusBar } from "./components/StatusBar.js";
 import { createDangerousCommandGuard } from "./hooks/dangerous-command-guard.js";
 import { HookManager } from "./hooks/manager.js";
 import type { AgentModel } from "./model.js";
-import { getMostRecentSession, listSessions, loadSession, saveSession } from "./session.js";
+import { createModel } from "./model.js";
+import { getMostRecentSession, saveSession } from "./session.js";
 import type {
   AgentConfig,
+  CommandContext,
   DisplayMessage,
   HookDecision,
   SessionListEntry,
@@ -32,7 +35,7 @@ interface PendingApproval {
   resolve: (approved: boolean) => void;
 }
 
-export function App({ config, model, tools }: Props) {
+export function App({ config, model: initialModel, tools }: Props) {
   const { exit } = useApp();
   const [phase, setPhase] = useState<"init" | "active">("init");
   const [resumeCandidate, setResumeCandidate] = useState<SessionListEntry | null>(null);
@@ -46,6 +49,12 @@ export function App({ config, model, tools }: Props) {
     outputTokens: 0,
     totalTokens: 0,
   });
+
+  // Model switching state
+  const [currentModel, setCurrentModel] = useState<AgentModel>(initialModel);
+  const [currentModelId, setCurrentModelId] = useState(config.modelId);
+
+  const commandRegistry = useMemo(() => createCommandRegistry(), []);
 
   // Set up hook manager with approval flow
   const hookManagerRef = useRef<HookManager | null>(null);
@@ -68,6 +77,8 @@ export function App({ config, model, tools }: Props) {
   displayMessagesRef.current = displayMessages;
   const totalUsageRef = useRef(totalUsage);
   totalUsageRef.current = totalUsage;
+  const currentModelIdRef = useRef(currentModelId);
+  currentModelIdRef.current = currentModelId;
 
   const saveCurrentSession = useCallback(
     async (name?: string) => {
@@ -79,10 +90,10 @@ export function App({ config, model, tools }: Props) {
           displayMessages: displayMessagesRef.current,
           totalUsage: totalUsageRef.current,
         },
-        { name, modelId: config.modelId, cwd: config.cwd },
+        { name, modelId: currentModelIdRef.current, cwd: config.cwd },
       );
     },
-    [config.sessionsDir, config.modelId, config.cwd],
+    [config.sessionsDir, config.cwd],
   );
 
   // Check for resumable session on startup
@@ -103,6 +114,7 @@ export function App({ config, model, tools }: Props) {
   const handleResumeDecision = useCallback(
     async (resume: boolean) => {
       if (resume && resumeCandidate) {
+        const { loadSession } = await import("./session.js");
         try {
           const session = await loadSession(config.sessionsDir, resumeCandidate.filename);
           setMessages(session.state.messages);
@@ -148,112 +160,64 @@ export function App({ config, model, tools }: Props) {
 
       const trimmed = text.trim();
 
-      if (trimmed === "/exit" || trimmed === "/quit") {
-        await saveCurrentSession().catch(() => {});
-        exit();
-        return;
-      }
+      // Slash command handling via registry
+      if (trimmed.startsWith("/")) {
+        const [cmdName, ...rest] = trimmed.slice(1).split(" ");
+        const cmd = commandRegistry.get(cmdName);
 
-      if (trimmed === "/save" || trimmed.startsWith("/save ")) {
-        const name = trimmed.slice(5).trim() || undefined;
-        try {
-          await saveCurrentSession(name);
-          const confirmMsg: DisplayMessage = {
-            id: crypto.randomUUID(),
-            role: "assistant",
-            content: `Session saved${name ? ` as "${name}"` : ""}.`,
-            timestamp: Date.now(),
-          };
-          setDisplayMessages((prev) => [...prev, confirmMsg]);
-        } catch (err) {
+        if (!cmd) {
           const errorMsg: DisplayMessage = {
             id: crypto.randomUUID(),
             role: "assistant",
-            content: `Failed to save session: ${err instanceof Error ? err.message : String(err)}`,
+            content: `Unknown command: \`/${cmdName}\`. Type \`/help\` to see available commands.`,
             timestamp: Date.now(),
           };
           setDisplayMessages((prev) => [...prev, errorMsg]);
+          return;
         }
-        return;
-      }
 
-      if (trimmed === "/sessions") {
+        const commandCtx: CommandContext = {
+          config: { ...config, modelId: currentModelIdRef.current },
+          setMessages,
+          setDisplayMessages,
+          totalUsage: totalUsageRef.current,
+          setTotalUsage,
+          saveSession: saveCurrentSession,
+          setModel: (modelId: string) => {
+            const newModel = createModel({ ...config, modelId });
+            setCurrentModel(newModel);
+            setCurrentModelId(modelId);
+          },
+          exit,
+        };
+
+        let result: import("./types.js").CommandResult;
         try {
-          const sessions = await listSessions(config.sessionsDir);
-          if (sessions.length === 0) {
-            const msg: DisplayMessage = {
-              id: crypto.randomUUID(),
-              role: "assistant",
-              content: "No saved sessions.",
-              timestamp: Date.now(),
-            };
-            setDisplayMessages((prev) => [...prev, msg]);
-          } else {
-            const lines = sessions.map(
-              (s, i) =>
-                `${i + 1}. **${s.name}** (${s.messageCount} messages, ${s.modelId}) — ${s.filename}`,
-            );
-            const msg: DisplayMessage = {
-              id: crypto.randomUUID(),
-              role: "assistant",
-              content: `Saved sessions:\n${lines.join("\n")}`,
-              timestamp: Date.now(),
-            };
-            setDisplayMessages((prev) => [...prev, msg]);
-          }
+          result = await cmd.execute(rest.join(" "), commandCtx);
         } catch (err) {
           const msg: DisplayMessage = {
             id: crypto.randomUUID(),
             role: "assistant",
-            content: `Failed to list sessions: ${err instanceof Error ? err.message : String(err)}`,
-            timestamp: Date.now(),
-          };
-          setDisplayMessages((prev) => [...prev, msg]);
-        }
-        return;
-      }
-
-      if (trimmed === "/load" || trimmed.startsWith("/load ")) {
-        const arg = trimmed.slice(5).trim();
-        if (!arg) {
-          const msg: DisplayMessage = {
-            id: crypto.randomUUID(),
-            role: "assistant",
-            content: "Usage: `/load <number>` or `/load <filename>`",
+            content: `Command /${cmdName} failed: ${err instanceof Error ? err.message : String(err)}`,
             timestamp: Date.now(),
           };
           setDisplayMessages((prev) => [...prev, msg]);
           return;
         }
 
-        try {
-          let filename = arg;
-          const index = /^\d+$/.test(arg) ? Number.parseInt(arg, 10) : Number.NaN;
-          if (!Number.isNaN(index)) {
-            const sessions = await listSessions(config.sessionsDir);
-            if (index < 1 || index > sessions.length) {
-              throw new Error(`Invalid session number. Use /sessions to see available sessions.`);
-            }
-            filename = sessions[index - 1].filename;
-          }
-
-          const session = await loadSession(config.sessionsDir, filename);
-          setMessages(session.state.messages);
-          setDisplayMessages(session.state.displayMessages);
-          setTotalUsage(session.state.totalUsage);
-
+        if (result.error) {
           const msg: DisplayMessage = {
             id: crypto.randomUUID(),
             role: "assistant",
-            content: `Loaded session: ${session.metadata.name}`,
+            content: result.error,
             timestamp: Date.now(),
           };
           setDisplayMessages((prev) => [...prev, msg]);
-        } catch (err) {
+        } else if (result.message) {
           const msg: DisplayMessage = {
             id: crypto.randomUUID(),
             role: "assistant",
-            content: `Failed to load session: ${err instanceof Error ? err.message : String(err)}`,
+            content: result.message,
             timestamp: Date.now(),
           };
           setDisplayMessages((prev) => [...prev, msg]);
@@ -289,7 +253,12 @@ export function App({ config, model, tools }: Props) {
         : undefined;
 
       try {
-        const stream = runAgent(newMessages, { model, config, tools, onPreToolUse });
+        const stream = runAgent(newMessages, {
+          model: currentModel,
+          config,
+          tools,
+          onPreToolUse,
+        });
 
         for await (const event of stream) {
           switch (event.type) {
@@ -348,13 +317,13 @@ export function App({ config, model, tools }: Props) {
       setStreamingText("");
       setIsLoading(false);
     },
-    [messages, isLoading, model, config, tools, exit, saveCurrentSession],
+    [messages, isLoading, currentModel, config, tools, exit, saveCurrentSession, commandRegistry],
   );
 
   if (phase === "init" && resumeCandidate) {
     return (
       <Box flexDirection="column" height="100%">
-        <StatusBar modelId={config.modelId} usage={totalUsage} />
+        <StatusBar modelId={currentModelId} usage={totalUsage} />
         <SessionResumePrompt session={resumeCandidate} onDecision={handleResumeDecision} />
       </Box>
     );
@@ -362,7 +331,7 @@ export function App({ config, model, tools }: Props) {
 
   return (
     <Box flexDirection="column" height="100%">
-      <StatusBar modelId={config.modelId} usage={totalUsage} />
+      <StatusBar modelId={currentModelId} usage={totalUsage} />
       <MessageList messages={displayMessages} streamingText={streamingText} />
       {pendingApproval ? (
         <ApprovalPrompt
@@ -371,7 +340,7 @@ export function App({ config, model, tools }: Props) {
           onDecision={handleApprovalDecision}
         />
       ) : (
-        <InputBar onSubmit={handleSubmit} isLoading={isLoading} />
+        <InputBar onSubmit={handleSubmit} isLoading={isLoading} commands={commandRegistry} />
       )}
     </Box>
   );
