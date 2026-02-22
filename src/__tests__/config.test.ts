@@ -99,4 +99,11 @@ describe("loadConfig", () => {
     const config = loadConfig();
     expect(config.cwd).toBe(process.cwd());
   });
+
+  test("sets sessionsDir under home directory", () => {
+    process.env.OPENROUTER_API_KEY = "test-key";
+    const config = loadConfig();
+    expect(config.sessionsDir).toContain(".coding-agent");
+    expect(config.sessionsDir).toContain("sessions");
+  });
 });

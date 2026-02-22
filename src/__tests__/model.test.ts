@@ -10,6 +10,7 @@ function makeConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
     systemPrompt: "test prompt",
     cwd: "/tmp",
     maxTurns: 40,
+    sessionsDir: "/tmp/sessions",
     ...overrides,
   };
 }

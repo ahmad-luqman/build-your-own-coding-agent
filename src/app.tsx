@@ -1,18 +1,21 @@
 import type { ModelMessage } from "ai";
 import { Box, useApp, useInput } from "ink";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { runAgent } from "./agent.js";
 import { ApprovalPrompt } from "./components/ApprovalPrompt.js";
 import { InputBar } from "./components/InputBar.js";
 import { MessageList } from "./components/MessageList.js";
+import { SessionResumePrompt } from "./components/SessionResumePrompt.js";
 import { StatusBar } from "./components/StatusBar.js";
 import { createDangerousCommandGuard } from "./hooks/dangerous-command-guard.js";
 import { HookManager } from "./hooks/manager.js";
 import type { AgentModel } from "./model.js";
+import { getMostRecentSession, listSessions, loadSession, saveSession } from "./session.js";
 import type {
   AgentConfig,
   DisplayMessage,
   HookDecision,
+  SessionListEntry,
   TokenUsage,
   ToolDefinition,
 } from "./types.js";
@@ -31,6 +34,8 @@ interface PendingApproval {
 
 export function App({ config, model, tools }: Props) {
   const { exit } = useApp();
+  const [phase, setPhase] = useState<"init" | "active">("init");
+  const [resumeCandidate, setResumeCandidate] = useState<SessionListEntry | null>(null);
   const [messages, setMessages] = useState<ModelMessage[]>([]);
   const [displayMessages, setDisplayMessages] = useState<DisplayMessage[]>([]);
   const [streamingText, setStreamingText] = useState("");
@@ -56,9 +61,66 @@ export function App({ config, model, tools }: Props) {
     hookManagerRef.current = hm;
   }
 
+  // Refs for save callback to access latest state without re-creating
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
+  const displayMessagesRef = useRef(displayMessages);
+  displayMessagesRef.current = displayMessages;
+  const totalUsageRef = useRef(totalUsage);
+  totalUsageRef.current = totalUsage;
+
+  const saveCurrentSession = useCallback(
+    async (name?: string) => {
+      if (messagesRef.current.length === 0) return;
+      try {
+        await saveSession(
+          config.sessionsDir,
+          {
+            messages: messagesRef.current,
+            displayMessages: displayMessagesRef.current,
+            totalUsage: totalUsageRef.current,
+          },
+          { name, modelId: config.modelId, cwd: config.cwd },
+        );
+      } catch {
+        // Best-effort save — don't crash the app
+      }
+    },
+    [config.sessionsDir, config.modelId, config.cwd],
+  );
+
+  // Check for resumable session on startup
+  useEffect(() => {
+    getMostRecentSession(config.sessionsDir).then((entry) => {
+      if (entry) {
+        setResumeCandidate(entry);
+      } else {
+        setPhase("active");
+      }
+    });
+  }, [config.sessionsDir]);
+
+  const handleResumeDecision = useCallback(
+    async (resume: boolean) => {
+      if (resume && resumeCandidate) {
+        try {
+          const session = await loadSession(config.sessionsDir, resumeCandidate.filename);
+          setMessages(session.state.messages);
+          setDisplayMessages(session.state.displayMessages);
+          setTotalUsage(session.state.totalUsage);
+        } catch {
+          // Failed to load — start fresh
+        }
+      }
+      setResumeCandidate(null);
+      setPhase("active");
+    },
+    [resumeCandidate, config.sessionsDir],
+  );
+
   useInput((input: string, key: { ctrl: boolean }) => {
     if (input === "c" && key.ctrl) {
-      exit();
+      saveCurrentSession().finally(() => exit());
     }
   });
 
@@ -76,8 +138,118 @@ export function App({ config, model, tools }: Props) {
     async (text: string) => {
       if (!text.trim() || isLoading) return;
 
-      if (text.trim() === "/exit" || text.trim() === "/quit") {
+      const trimmed = text.trim();
+
+      if (trimmed === "/exit" || trimmed === "/quit") {
+        await saveCurrentSession();
         exit();
+        return;
+      }
+
+      if (trimmed.startsWith("/save")) {
+        const name = trimmed.slice(5).trim() || undefined;
+        try {
+          await saveCurrentSession(name);
+          const confirmMsg: DisplayMessage = {
+            id: crypto.randomUUID(),
+            role: "assistant",
+            content: `Session saved${name ? ` as "${name}"` : ""}.`,
+            timestamp: Date.now(),
+          };
+          setDisplayMessages((prev: DisplayMessage[]) => [...prev, confirmMsg]);
+        } catch (err) {
+          const errorMsg: DisplayMessage = {
+            id: crypto.randomUUID(),
+            role: "assistant",
+            content: `Failed to save session: ${err instanceof Error ? err.message : String(err)}`,
+            timestamp: Date.now(),
+          };
+          setDisplayMessages((prev: DisplayMessage[]) => [...prev, errorMsg]);
+        }
+        return;
+      }
+
+      if (trimmed === "/sessions") {
+        try {
+          const sessions = await listSessions(config.sessionsDir);
+          if (sessions.length === 0) {
+            const msg: DisplayMessage = {
+              id: crypto.randomUUID(),
+              role: "assistant",
+              content: "No saved sessions.",
+              timestamp: Date.now(),
+            };
+            setDisplayMessages((prev: DisplayMessage[]) => [...prev, msg]);
+          } else {
+            const lines = sessions.map(
+              (s, i) =>
+                `${i + 1}. **${s.name}** (${s.messageCount} messages, ${s.modelId}) — ${s.filename}`,
+            );
+            const msg: DisplayMessage = {
+              id: crypto.randomUUID(),
+              role: "assistant",
+              content: `Saved sessions:\n${lines.join("\n")}`,
+              timestamp: Date.now(),
+            };
+            setDisplayMessages((prev: DisplayMessage[]) => [...prev, msg]);
+          }
+        } catch {
+          const msg: DisplayMessage = {
+            id: crypto.randomUUID(),
+            role: "assistant",
+            content: "Failed to list sessions.",
+            timestamp: Date.now(),
+          };
+          setDisplayMessages((prev: DisplayMessage[]) => [...prev, msg]);
+        }
+        return;
+      }
+
+      if (trimmed.startsWith("/load")) {
+        const arg = trimmed.slice(5).trim();
+        if (!arg) {
+          const msg: DisplayMessage = {
+            id: crypto.randomUUID(),
+            role: "assistant",
+            content: "Usage: `/load <number>` or `/load <filename>`",
+            timestamp: Date.now(),
+          };
+          setDisplayMessages((prev: DisplayMessage[]) => [...prev, msg]);
+          return;
+        }
+
+        try {
+          let filename = arg;
+          const index = Number.parseInt(arg, 10);
+          if (!Number.isNaN(index)) {
+            const sessions = await listSessions(config.sessionsDir);
+            if (index < 1 || index > sessions.length) {
+              throw new Error(`Invalid session number. Use /sessions to see available sessions.`);
+            }
+            filename = sessions[index - 1].filename;
+          }
+
+          const session = await loadSession(config.sessionsDir, filename);
+          setMessages(session.state.messages);
+          setDisplayMessages(session.state.displayMessages);
+          setTotalUsage(session.state.totalUsage);
+
+          const msg: DisplayMessage = {
+            id: crypto.randomUUID(),
+            role: "assistant",
+            content: `Loaded session: ${session.metadata.name}`,
+            timestamp: Date.now(),
+          };
+          setDisplayMessages((prev: DisplayMessage[]) => [...prev, msg]);
+        } catch (err) {
+          const msg: DisplayMessage = {
+            id: crypto.randomUUID(),
+            role: "assistant",
+            content: `Failed to load session: ${err instanceof Error ? err.message : String(err)}`,
+            timestamp: Date.now(),
+          };
+          setDisplayMessages((prev: DisplayMessage[]) => [...prev, msg]);
+        }
         return;
       }
 
@@ -168,8 +340,17 @@ export function App({ config, model, tools }: Props) {
       setStreamingText("");
       setIsLoading(false);
     },
-    [messages, isLoading, model, config, tools, exit],
+    [messages, isLoading, model, config, tools, exit, saveCurrentSession],
   );
+
+  if (phase === "init" && resumeCandidate) {
+    return (
+      <Box flexDirection="column" height="100%">
+        <StatusBar modelId={config.modelId} usage={totalUsage} />
+        <SessionResumePrompt session={resumeCandidate} onDecision={handleResumeDecision} />
+      </Box>
+    );
+  }
 
   return (
     <Box flexDirection="column" height="100%">

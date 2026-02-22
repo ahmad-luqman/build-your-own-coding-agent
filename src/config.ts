@@ -1,3 +1,5 @@
+import { homedir } from "node:os";
+import { join } from "node:path";
 import type { AgentConfig, Provider } from "./types.js";
 
 const MODEL_DEFAULTS: Record<Provider, string> = {
@@ -31,6 +33,7 @@ export function loadConfig(): AgentConfig {
     systemPrompt: getSystemPrompt(),
     cwd: process.cwd(),
     maxTurns: 40,
+    sessionsDir: join(homedir(), ".coding-agent", "sessions"),
   };
 }
 
