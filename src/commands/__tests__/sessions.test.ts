@@ -79,4 +79,10 @@ describe("sessionsCommand", () => {
     expect(result.message).toContain("1.");
     expect(result.message).toContain("2.");
   });
+
+  test("returns error when listSessions throws", async () => {
+    const ctx = makeCtx({ config: { ...makeBaseCtx().config, sessionsDir: "/nonexistent/path" } });
+    const result = await sessionsCommand.execute("", ctx);
+    expect(result.error).toContain("Failed to list sessions");
+  });
 });

@@ -21,6 +21,7 @@ export async function* runAgent(
 
   while (turn < config.maxTurns) {
     turn++;
+    yield { type: "turn-start" as const, turn, maxTurns: config.maxTurns };
 
     const result = streamText({
       model: model as any,

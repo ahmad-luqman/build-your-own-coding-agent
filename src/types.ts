@@ -4,6 +4,7 @@ import type { z } from "zod";
 // --- Agent Events (yielded from the agent loop) ---
 
 export type AgentEvent =
+  | { type: "turn-start"; turn: number; maxTurns: number }
   | { type: "text-delta"; text: string }
   | { type: "tool-call"; toolName: string; input: Record<string, unknown>; toolCallId: string }
   | { type: "tool-result"; toolName: string; toolCallId: string; result: ToolResult }
