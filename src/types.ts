@@ -121,3 +121,31 @@ export interface SessionFile {
 export interface SessionListEntry extends SessionMetadata {
   filename: string;
 }
+
+// --- Slash Commands ---
+
+export interface CommandContext {
+  config: AgentConfig;
+  setMessages: (msgs: ModelMessage[]) => void;
+  setDisplayMessages: (updater: (prev: DisplayMessage[]) => DisplayMessage[]) => void;
+  totalUsage: TokenUsage;
+  setTotalUsage: (usage: TokenUsage) => void;
+  saveSession: (name?: string) => Promise<void>;
+  setModel: (modelId: string) => void;
+  exit: () => void;
+}
+
+export interface CommandResult {
+  /** Displayed as an assistant message */
+  message?: string;
+  /** Displayed as an error message */
+  error?: string;
+}
+
+export interface CommandDefinition {
+  name: string;
+  description: string;
+  usage?: string;
+  aliases?: string[];
+  execute: (args: string, ctx: CommandContext) => Promise<CommandResult> | CommandResult;
+}
