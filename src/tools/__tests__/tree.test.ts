@@ -32,7 +32,6 @@ describe("treeTool", () => {
     const result = await treeTool.execute({}, { cwd: testDir });
     expect(result.success).toBe(true);
     expect(result.data?.depth).toBe(3);
-    // Should include files at all 3 levels
     expect(result.output).toContain("package.json");
     expect(result.output).toContain("index.ts");
     expect(result.output).toContain("App.tsx");
@@ -43,11 +42,9 @@ describe("treeTool", () => {
     const result = await treeTool.execute({ depth: 1 }, { cwd: testDir });
     expect(result.success).toBe(true);
     expect(result.data?.depth).toBe(1);
-    // Should show top-level entries (dirs + files)
     expect(result.output).toContain("src");
     expect(result.output).toContain("docs");
     expect(result.output).toContain("package.json");
-    // Should NOT show nested files
     expect(result.output).not.toContain("index.ts");
     expect(result.output).not.toContain("App.tsx");
   });
@@ -64,8 +61,8 @@ describe("treeTool", () => {
     expect(result.output).not.toContain(".git");
   });
 
-  test("respects custom .gitignore patterns", async () => {
-    writeFileSync(join(testDir, ".gitignore"), "docs/\n*.log\n");
+  test("respects custom .gitignore patterns with comments and blank lines", async () => {
+    writeFileSync(join(testDir, ".gitignore"), "# this is a comment\n\ndocs/\n*.log\n");
     mkdirSync(join(testDir, "logs"), { recursive: true });
     writeFileSync(join(testDir, "logs", "app.log"), "log line");
     writeFileSync(join(testDir, "error.log"), "error");
@@ -75,20 +72,40 @@ describe("treeTool", () => {
     expect(result.output).not.toContain("docs");
     expect(result.output).not.toContain("app.log");
     expect(result.output).not.toContain("error.log");
+    // Comments and blank lines should not be treated as patterns
+    expect(result.output).toContain("src");
+  });
+
+  test("skips gitignore negation patterns", async () => {
+    writeFileSync(join(testDir, ".gitignore"), "*.log\n!important.log\n");
+    writeFileSync(join(testDir, "debug.log"), "debug");
+    writeFileSync(join(testDir, "important.log"), "keep me");
+
+    const result = await treeTool.execute({}, { cwd: testDir });
+    expect(result.success).toBe(true);
+    // *.log should be ignored; negation patterns are skipped (not supported)
+    expect(result.output).not.toContain("debug.log");
   });
 
   test("includes file sizes in data", async () => {
     const result = await treeTool.execute({}, { cwd: testDir });
     expect(result.success).toBe(true);
     expect(typeof result.data?.totalSize).toBe("number");
-    expect((result.data?.totalSize as number) > 0).toBe(true);
+    expect(result.data?.totalSize).toBeGreaterThan(0);
+  });
+
+  test("formats file sizes in KB for larger files", async () => {
+    writeFileSync(join(testDir, "large.bin"), Buffer.alloc(2048));
+    const result = await treeTool.execute({}, { cwd: testDir });
+    expect(result.success).toBe(true);
+    expect(result.output).toContain("2.0 KB");
   });
 
   test("includes file and directory counts", async () => {
     const result = await treeTool.execute({}, { cwd: testDir });
     expect(result.success).toBe(true);
     expect(result.data?.totalFiles).toBe(5);
-    expect(result.data?.totalDirs).toBe(4); // src, src/components, src/utils, docs
+    expect(result.data?.totalDirs).toBe(4);
   });
 
   test("custom path overrides cwd", async () => {
@@ -96,7 +113,14 @@ describe("treeTool", () => {
     expect(result.success).toBe(true);
     expect(result.output).toContain("index.ts");
     expect(result.output).toContain("components");
-    // Should not include root-level files
+    expect(result.output).not.toContain("package.json");
+  });
+
+  test("resolves relative path against cwd", async () => {
+    const result = await treeTool.execute({ path: "src" }, { cwd: testDir });
+    expect(result.success).toBe(true);
+    expect(result.output).toContain("index.ts");
+    expect(result.output).toContain("components");
     expect(result.output).not.toContain("package.json");
   });
 
@@ -114,7 +138,6 @@ describe("treeTool", () => {
   test("output contains tree formatting characters", async () => {
     const result = await treeTool.execute({}, { cwd: testDir });
     expect(result.success).toBe(true);
-    // Should use tree-drawing characters
     expect(result.output).toMatch(/[├└│]/);
     expect(result.output).toMatch(/──/);
   });
@@ -122,11 +145,22 @@ describe("treeTool", () => {
   test("depth 0 returns only root-level summary", async () => {
     const result = await treeTool.execute({ depth: 0 }, { cwd: testDir });
     expect(result.success).toBe(true);
-    // Should not list any entries
     expect(result.output).not.toContain("src");
     expect(result.output).not.toContain("package.json");
     expect(result.data?.totalFiles).toBe(5);
     expect(result.data?.totalDirs).toBe(4);
+  });
+
+  test("rejects negative depth", async () => {
+    const result = await treeTool.execute({ depth: -1 }, { cwd: testDir });
+    expect(result.success).toBe(false);
+    expect(result.error).toBeDefined();
+  });
+
+  test("rejects fractional depth", async () => {
+    const result = await treeTool.execute({ depth: 1.5 }, { cwd: testDir });
+    expect(result.success).toBe(false);
+    expect(result.error).toBeDefined();
   });
 
   test("non-existent path returns error", async () => {

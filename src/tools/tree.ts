@@ -1,12 +1,17 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { basename, join } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { glob } from "glob";
 import { z } from "zod";
 import type { ToolDefinition } from "../types.js";
 
 const inputSchema = z.object({
   path: z.string().optional().describe("Directory to list. Defaults to cwd."),
-  depth: z.number().optional().describe("Max depth to traverse (default: 3)"),
+  depth: z
+    .number()
+    .int()
+    .min(0)
+    .optional()
+    .describe("Max depth to traverse (default: 3). Must be a non-negative integer."),
 });
 
 interface TreeNode {
@@ -16,25 +21,32 @@ interface TreeNode {
   children?: TreeNode[];
 }
 
+/** Parse .gitignore into glob ignore patterns. Returns [] on any read failure. */
 function parseGitignore(cwd: string): string[] {
-  const gitignorePath = join(cwd, ".gitignore");
-  if (!existsSync(gitignorePath)) return [];
-  const content = readFileSync(gitignorePath, "utf-8");
-  return content
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line && !line.startsWith("#"))
-    .map((pattern) => {
-      // Convert gitignore patterns to glob ignore patterns
-      if (pattern.endsWith("/")) return `**/${pattern}**`;
-      return `**/${pattern}`;
-    });
+  try {
+    const content = readFileSync(join(cwd, ".gitignore"), "utf-8");
+    return content
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith("#") && !line.startsWith("!"))
+      .map((pattern) => {
+        if (pattern.endsWith("/")) return `**/${pattern}**`;
+        return `**/${pattern}`;
+      });
+  } catch {
+    return [];
+  }
 }
 
-function buildTree(files: string[], dirs: string[], cwd: string, maxDepth: number): TreeNode {
+function buildTree(
+  files: string[],
+  dirs: string[],
+  cwd: string,
+  maxDepth: number,
+  fileSizes: Map<string, number>,
+): TreeNode {
   const root: TreeNode = { name: basename(cwd), type: "directory", children: [] };
 
-  // Helper to ensure a directory node exists at a given path
   function ensureDir(parts: string[]): TreeNode {
     let current = root;
     for (const part of parts) {
@@ -48,14 +60,12 @@ function buildTree(files: string[], dirs: string[], cwd: string, maxDepth: numbe
     return current;
   }
 
-  // Add directories visible within maxDepth
   for (const dirPath of dirs.sort()) {
     const parts = dirPath.split("/");
     if (parts.length > maxDepth) continue;
     ensureDir(parts);
   }
 
-  // Add files visible within maxDepth
   for (const filePath of files.sort()) {
     const parts = filePath.split("/");
     if (parts.length > maxDepth) continue;
@@ -64,14 +74,7 @@ function buildTree(files: string[], dirs: string[], cwd: string, maxDepth: numbe
     const fileName = parts[parts.length - 1];
     const parent = dirParts.length > 0 ? ensureDir(dirParts) : root;
 
-    const fullPath = join(cwd, filePath);
-    let size = 0;
-    try {
-      size = statSync(fullPath).size;
-    } catch {
-      // file may have been removed between glob and stat
-    }
-    parent.children!.push({ name: fileName, type: "file", size });
+    parent.children!.push({ name: fileName, type: "file", size: fileSizes.get(filePath) ?? 0 });
   }
 
   return root;
@@ -90,7 +93,6 @@ function formatTree(node: TreeNode, prefix: string, isLast: boolean, isRoot: boo
 
   if (node.children) {
     const sorted = [...node.children].sort((a, b) => {
-      // Directories first, then files, alphabetical within each group
       if (a.type !== b.type) return a.type === "directory" ? -1 : 1;
       return a.name.localeCompare(b.name);
     });
@@ -116,17 +118,26 @@ export const treeTool: ToolDefinition = {
   name: "tree",
   description:
     "Show directory structure as a tree with file sizes and counts. " +
-    "Respects .gitignore patterns. Useful for understanding project layout in a single call.",
+    "Respects top-level .gitignore patterns (negation and nested .gitignore files are not supported). " +
+    "Useful for understanding project layout in a single call.",
   inputSchema,
   execute: async (input, ctx) => {
     try {
-      const cwd = input.path ?? ctx.cwd;
+      const cwd = input.path ? resolve(ctx.cwd, input.path) : ctx.cwd;
 
       if (!existsSync(cwd)) {
         return { success: false, output: "", error: `Directory not found: ${cwd}` };
       }
 
-      const maxDepth = input.depth ?? 3;
+      const rawDepth = input.depth ?? 3;
+      if (!Number.isInteger(rawDepth) || rawDepth < 0) {
+        return {
+          success: false,
+          output: "",
+          error: `Invalid depth: ${rawDepth}. Must be a non-negative integer.`,
+        };
+      }
+      const maxDepth = rawDepth;
       const baseIgnores = ["**/node_modules/**", "**/.git/**"];
       const gitignorePatterns = parseGitignore(cwd);
       const ignorePatterns = [...baseIgnores, ...gitignorePatterns];
@@ -136,23 +147,33 @@ export const treeTool: ToolDefinition = {
         nodir: false,
         dot: false,
         ignore: ignorePatterns,
-        mark: true, // appends / to dirs
+        mark: true,
       });
 
-      // Separate files and dirs, strip trailing / from dirs
       const allFiles = files.filter((f) => !f.endsWith("/")).sort();
       const allDirs = files
         .filter((f) => f.endsWith("/"))
         .map((f) => f.slice(0, -1))
         .sort();
 
-      // Count totals from the full list (not limited by depth)
+      // Stat each file once and cache sizes
+      const fileSizes = new Map<string, number>();
       let totalSize = 0;
       for (const f of allFiles) {
         try {
-          totalSize += statSync(join(cwd, f)).size;
-        } catch {
-          // skip
+          const size = statSync(join(cwd, f)).size;
+          fileSizes.set(f, size);
+          totalSize += size;
+        } catch (err: unknown) {
+          if (
+            err instanceof Error &&
+            "code" in err &&
+            (err as NodeJS.ErrnoException).code === "ENOENT"
+          ) {
+            // File removed between glob and stat — expected race condition
+            continue;
+          }
+          throw err;
         }
       }
       const totalFiles = allFiles.length;
@@ -167,7 +188,7 @@ export const treeTool: ToolDefinition = {
         };
       }
 
-      const tree = buildTree(allFiles, allDirs, cwd, maxDepth);
+      const tree = buildTree(allFiles, allDirs, cwd, maxDepth, fileSizes);
 
       if (tree.children!.length === 0) {
         return {
