@@ -4,8 +4,8 @@ import { createToolRegistry } from "../registry.js";
 describe("createToolRegistry", () => {
   const registry = createToolRegistry();
 
-  test("registers all 6 tools", () => {
-    expect(registry.size).toBe(6);
+  test("registers all 7 tools", () => {
+    expect(registry.size).toBe(7);
   });
 
   test("contains expected tool names", () => {
@@ -13,6 +13,7 @@ describe("createToolRegistry", () => {
     expect(names).toContain("read_file");
     expect(names).toContain("glob");
     expect(names).toContain("grep");
+    expect(names).toContain("tree");
     expect(names).toContain("write_file");
     expect(names).toContain("edit_file");
     expect(names).toContain("bash");

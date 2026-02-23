@@ -44,6 +44,7 @@ function getSystemPrompt(): string {
 - **read_file**: Read file contents (with optional offset/limit for large files)
 - **glob**: Find files by pattern (e.g. "**/*.ts")
 - **grep**: Search file contents with regex
+- **tree**: Show directory structure with file sizes and counts (respects .gitignore)
 - **write_file**: Create or overwrite files (requires approval)
 - **edit_file**: Make surgical edits by replacing exact string matches (requires approval)
 - **bash**: Run shell commands (requires approval)
