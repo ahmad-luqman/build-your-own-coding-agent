@@ -1,5 +1,7 @@
+import { access } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { buildSystemPrompt, CONTEXT_FILES, loadProjectContext } from "./context/index.js";
 import type { AgentConfig, Provider } from "./types.js";
 
 const MODEL_DEFAULTS: Record<Provider, string> = {
@@ -7,7 +9,7 @@ const MODEL_DEFAULTS: Record<Provider, string> = {
   ollama: "qwen3-coder-next",
 };
 
-export function loadConfig(): AgentConfig {
+export async function loadConfig(): Promise<AgentConfig> {
   const provider = (process.env.PROVIDER ?? "openrouter") as Provider;
   if (provider !== "openrouter" && provider !== "ollama") {
     console.error(`Unknown PROVIDER "${provider}". Supported: openrouter, ollama`);
@@ -25,13 +27,26 @@ export function loadConfig(): AgentConfig {
     }
   }
 
+  const cwd = process.cwd();
+  const projectContext = await loadProjectContext(cwd);
+  const systemPrompt = buildSystemPrompt(getSystemPrompt(), projectContext);
+
+  if (projectContext) {
+    console.error(`Loaded project context from ${projectContext.fileName}`);
+  } else {
+    const existsButFailed = await contextFileExists(cwd);
+    if (existsButFailed) {
+      console.error(`Warning: Found context file but failed to load it. Check file permissions.`);
+    }
+  }
+
   return {
     provider,
     modelId: process.env.MODEL_ID ?? MODEL_DEFAULTS[provider],
     apiKey,
     baseURL: process.env.OLLAMA_BASE_URL,
-    systemPrompt: getSystemPrompt(),
-    cwd: process.cwd(),
+    systemPrompt,
+    cwd,
     maxTurns: 40,
     sessionsDir: join(homedir(), ".coding-agent", "sessions"),
   };
@@ -58,4 +73,16 @@ function getSystemPrompt(): string {
 - If a tool call fails, diagnose the issue and try a different approach.
 
 Current working directory: ${process.cwd()}`;
+}
+
+async function contextFileExists(cwd: string): Promise<boolean> {
+  for (const fileName of CONTEXT_FILES) {
+    try {
+      await access(join(cwd, fileName));
+      return true;
+    } catch {
+      // File doesn't exist — try next
+    }
+  }
+  return false;
 }

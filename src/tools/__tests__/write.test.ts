@@ -76,4 +76,13 @@ describe("writeTool", () => {
     );
     expect(result.output).toContain("3 chars");
   });
+
+  test("returns error when write fails on unwritable path", async () => {
+    const result = await writeTool.execute(
+      { file_path: "/dev/null/impossible/file.txt", content: "test" },
+      { cwd: testDir },
+    );
+    expect(result.success).toBe(false);
+    expect(result.error).toBeDefined();
+  });
 });

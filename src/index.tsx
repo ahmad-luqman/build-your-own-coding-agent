@@ -6,7 +6,7 @@ import { loadConfig } from "./config.js";
 import { createModel } from "./model.js";
 import { createToolRegistry } from "./tools/registry.js";
 
-const config = loadConfig();
+const config = await loadConfig();
 const model = createModel(config);
 const tools = createToolRegistry();
 

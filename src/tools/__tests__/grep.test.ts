@@ -91,4 +91,10 @@ describe("grepTool", () => {
     const result = await grepTool.execute({ pattern: "foo" }, { cwd: testDir });
     expect(result.data?.truncated).toBe(false);
   });
+
+  test("returns error for invalid regex pattern", async () => {
+    const result = await grepTool.execute({ pattern: "[invalid" }, { cwd: testDir });
+    expect(result.success).toBe(false);
+    expect(result.error).toBeDefined();
+  });
 });
