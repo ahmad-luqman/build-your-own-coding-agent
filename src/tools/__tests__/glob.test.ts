@@ -69,4 +69,8 @@ describe("globTool", () => {
     const result = await globTool.execute({ pattern: "**/*.{ts,tsx,md}" }, { cwd: testDir });
     expect(result.output).toContain("3 files found");
   });
+
+  // Note: glob's error catch branch (lines 46-47) is defensive code.
+  // The glob library is internally resilient and doesn't throw for invalid inputs,
+  // making this branch effectively unreachable without mocking.
 });

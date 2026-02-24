@@ -1,13 +1,17 @@
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 
-export const CONTEXT_FILES = ["CLAUDE.md", "AGENTS.md", "CONTEXT.md", ".agent/context.md"];
+export const CONTEXT_FILES = ["CLAUDE.md", "AGENTS.md", "CONTEXT.md", ".agent/context.md"] as const;
+export type ContextFileName = (typeof CONTEXT_FILES)[number];
 export const MAX_CONTEXT_LENGTH = 4000;
 
+/** Size threshold (bytes) above which we warn before reading. */
+const SIZE_WARNING_THRESHOLD = MAX_CONTEXT_LENGTH * 4;
+
 export interface ProjectContext {
-  filePath: string;
-  fileName: string;
+  fileName: ContextFileName;
   content: string;
+  /** True when the original file exceeded MAX_CONTEXT_LENGTH and content was sliced. */
   truncated: boolean;
 }
 
@@ -15,6 +19,13 @@ export async function loadProjectContext(cwd: string): Promise<ProjectContext | 
   for (const fileName of CONTEXT_FILES) {
     const filePath = join(cwd, fileName);
     try {
+      const fileStats = await stat(filePath);
+      if (fileStats.size > SIZE_WARNING_THRESHOLD) {
+        console.error(
+          `Warning: ${fileName} is ${fileStats.size} bytes — reading first ${MAX_CONTEXT_LENGTH} chars only`,
+        );
+      }
+
       let content = await readFile(filePath, "utf-8");
       let truncated = false;
 
@@ -23,9 +34,15 @@ export async function loadProjectContext(cwd: string): Promise<ProjectContext | 
         truncated = true;
       }
 
-      return { filePath, fileName, content, truncated };
-    } catch {
-      // File doesn't exist or isn't readable — try next
+      return { fileName, content, truncated };
+    } catch (err: unknown) {
+      const code =
+        err instanceof Error && "code" in err ? (err as NodeJS.ErrnoException).code : undefined;
+      if (code !== "ENOENT" && code !== "EACCES") {
+        console.error(
+          `Warning: Failed to read ${fileName}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
     }
   }
   return null;

@@ -1,4 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { mkdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { loadConfig } from "../config.js";
 
 describe("loadConfig", () => {
@@ -113,5 +116,71 @@ describe("loadConfig", () => {
     // Running from this repo, CLAUDE.md should be found
     expect(config.systemPrompt).toContain("Project Context");
     expect(config.systemPrompt).toContain("CLAUDE.md");
+  });
+
+  test("skips context silently when no context files exist at all", async () => {
+    process.env.OPENROUTER_API_KEY = "test-key";
+
+    // Empty temp dir — no CLAUDE.md, AGENTS.md, etc.
+    const emptyDir = join(
+      tmpdir(),
+      `config-empty-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    );
+    mkdirSync(emptyDir, { recursive: true });
+
+    const origCwd = process.cwd;
+    process.cwd = () => emptyDir;
+
+    const errorSpy = mock(() => {});
+    const origError = console.error;
+    console.error = errorSpy as any;
+
+    try {
+      const config = await loadConfig();
+      expect(config.systemPrompt).not.toContain("Project Context");
+      // Should NOT have logged any warning — no context files exist
+      const warningCalls = (errorSpy as any).mock.calls.filter((call: any[]) =>
+        String(call[0]).includes("Found context file"),
+      );
+      expect(warningCalls.length).toBe(0);
+    } finally {
+      process.cwd = origCwd;
+      console.error = origError;
+      rmSync(emptyDir, { recursive: true, force: true });
+    }
+  });
+
+  test("warns when context file exists but cannot be loaded", async () => {
+    process.env.OPENROUTER_API_KEY = "test-key";
+
+    // Create a temp dir with a directory named CLAUDE.md (not a file).
+    // access() sees it as existing, but readFile fails with EISDIR → loadProjectContext returns null.
+    const fakeDir = join(
+      tmpdir(),
+      `config-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    );
+    mkdirSync(join(fakeDir, "CLAUDE.md"), { recursive: true });
+
+    const origCwd = process.cwd;
+    process.cwd = () => fakeDir;
+
+    const errorSpy = mock(() => {});
+    const origError = console.error;
+    console.error = errorSpy as any;
+
+    try {
+      const config = await loadConfig();
+      // System prompt should NOT contain project context
+      expect(config.systemPrompt).not.toContain("Project Context");
+      // Should have logged the "found but failed" warning
+      const warningCalls = (errorSpy as any).mock.calls.filter((call: any[]) =>
+        String(call[0]).includes("Found context file but failed to load"),
+      );
+      expect(warningCalls.length).toBe(1);
+    } finally {
+      process.cwd = origCwd;
+      console.error = origError;
+      rmSync(fakeDir, { recursive: true, force: true });
+    }
   });
 });

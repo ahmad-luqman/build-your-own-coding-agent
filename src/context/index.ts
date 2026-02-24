@@ -1,6 +1,6 @@
 export { compactMessages } from "./compactor.js";
 export { getCompactionThreshold, getContextWindowLimit } from "./model-limits.js";
-export type { ProjectContext } from "./project-context.js";
+export type { ContextFileName, ProjectContext } from "./project-context.js";
 export {
   buildSystemPrompt,
   CONTEXT_FILES,
