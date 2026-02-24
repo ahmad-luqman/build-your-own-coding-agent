@@ -1,5 +1,6 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { buildSystemPrompt, loadProjectContext } from "./context/project-context.js";
 import type { AgentConfig, Provider } from "./types.js";
 
 const MODEL_DEFAULTS: Record<Provider, string> = {
@@ -7,7 +8,7 @@ const MODEL_DEFAULTS: Record<Provider, string> = {
   ollama: "qwen3-coder-next",
 };
 
-export function loadConfig(): AgentConfig {
+export async function loadConfig(): Promise<AgentConfig> {
   const provider = (process.env.PROVIDER ?? "openrouter") as Provider;
   if (provider !== "openrouter" && provider !== "ollama") {
     console.error(`Unknown PROVIDER "${provider}". Supported: openrouter, ollama`);
@@ -25,13 +26,21 @@ export function loadConfig(): AgentConfig {
     }
   }
 
+  const cwd = process.cwd();
+  const projectContext = await loadProjectContext(cwd);
+  const systemPrompt = buildSystemPrompt(getSystemPrompt(), projectContext);
+
+  if (projectContext) {
+    console.error(`Loaded project context from ${projectContext.fileName}`);
+  }
+
   return {
     provider,
     modelId: process.env.MODEL_ID ?? MODEL_DEFAULTS[provider],
     apiKey,
     baseURL: process.env.OLLAMA_BASE_URL,
-    systemPrompt: getSystemPrompt(),
-    cwd: process.cwd(),
+    systemPrompt,
+    cwd,
     maxTurns: 40,
     sessionsDir: join(homedir(), ".coding-agent", "sessions"),
   };
