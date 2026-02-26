@@ -7,19 +7,22 @@ interface AgentOptions {
   config: AgentConfig;
   tools?: Map<string, ToolDefinition>;
   onPreToolUse?: HookHandler;
+  abortSignal?: AbortSignal;
 }
 
 export async function* runAgent(
   messages: ModelMessage[],
   options: AgentOptions,
 ): AsyncGenerator<AgentEvent> {
-  const { model, config, tools, onPreToolUse } = options;
+  const { model, config, tools, onPreToolUse, abortSignal } = options;
 
   const aiTools = tools ? buildAITools(tools, config.cwd, onPreToolUse) : undefined;
 
   let turn = 0;
 
   while (turn < config.maxTurns) {
+    if (abortSignal?.aborted) return;
+
     turn++;
     yield { type: "turn-start" as const, turn, maxTurns: config.maxTurns };
 
@@ -28,70 +31,83 @@ export async function* runAgent(
       system: config.systemPrompt,
       messages,
       tools: aiTools as any,
+      abortSignal,
     });
 
-    for await (const chunk of result.fullStream) {
-      switch (chunk.type) {
-        case "text-delta":
-          yield { type: "text-delta", text: chunk.text };
-          break;
+    try {
+      for await (const chunk of result.fullStream) {
+        switch (chunk.type) {
+          case "text-delta":
+            yield { type: "text-delta", text: chunk.text };
+            break;
 
-        case "tool-call":
-          yield {
-            type: "tool-call",
-            toolName: chunk.toolName,
-            input: chunk.input as Record<string, unknown>,
-            toolCallId: chunk.toolCallId,
-          };
-          break;
+          case "tool-call":
+            yield {
+              type: "tool-call",
+              toolName: chunk.toolName,
+              input: chunk.input as Record<string, unknown>,
+              toolCallId: chunk.toolCallId,
+            };
+            break;
 
-        case "tool-result":
-          yield {
-            type: "tool-result",
-            toolName: chunk.toolName,
-            toolCallId: chunk.toolCallId,
-            result: {
-              success: true,
-              output:
-                typeof chunk.output === "string" ? chunk.output : JSON.stringify(chunk.output),
-            },
-          };
-          break;
+          case "tool-result":
+            yield {
+              type: "tool-result",
+              toolName: chunk.toolName,
+              toolCallId: chunk.toolCallId,
+              result: {
+                success: true,
+                output:
+                  typeof chunk.output === "string" ? chunk.output : JSON.stringify(chunk.output),
+              },
+            };
+            break;
 
-        case "tool-error":
-          yield {
-            type: "tool-result",
-            toolName: chunk.toolName,
-            toolCallId: chunk.toolCallId,
-            result: {
-              success: false,
-              output: "",
-              error: String(chunk.error),
-            },
-          };
-          break;
+          case "tool-error":
+            yield {
+              type: "tool-result",
+              toolName: chunk.toolName,
+              toolCallId: chunk.toolCallId,
+              result: {
+                success: false,
+                output: "",
+                error: String(chunk.error),
+              },
+            };
+            break;
 
-        case "error":
-          yield {
-            type: "error",
-            error: chunk.error instanceof Error ? chunk.error : new Error(String(chunk.error)),
-          };
-          break;
+          case "error":
+            yield {
+              type: "error",
+              error: chunk.error instanceof Error ? chunk.error : new Error(String(chunk.error)),
+            };
+            break;
 
-        case "finish": {
-          const usage = chunk.totalUsage;
-          yield {
-            type: "finish",
-            usage: {
-              inputTokens: usage?.inputTokens ?? 0,
-              outputTokens: usage?.outputTokens ?? 0,
-              totalTokens: (usage?.inputTokens ?? 0) + (usage?.outputTokens ?? 0),
-            },
-          };
-          break;
+          case "finish": {
+            const usage = chunk.totalUsage;
+            yield {
+              type: "finish",
+              usage: {
+                inputTokens: usage?.inputTokens ?? 0,
+                outputTokens: usage?.outputTokens ?? 0,
+                totalTokens: (usage?.inputTokens ?? 0) + (usage?.outputTokens ?? 0),
+              },
+            };
+            break;
+          }
         }
       }
+    } catch (err: unknown) {
+      // If our signal fired, stop cleanly — checking signal.aborted is authoritative
+      // and handles all runtimes (DOMException, plain Error, etc.) without name-matching.
+      // All other errors are re-thrown to be handled by the caller.
+      if (abortSignal?.aborted) return;
+      throw err;
     }
+
+    // Guard against a late abort that fires after the stream finishes but before
+    // result.response / result.finishReason resolve, which could cause them to reject.
+    if (abortSignal?.aborted) return;
 
     // Append response messages to history
     const response = await result.response;

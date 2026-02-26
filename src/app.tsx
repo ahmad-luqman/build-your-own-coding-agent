@@ -157,11 +157,29 @@ export function App({ config, model: initialModel, tools }: Props) {
     [resumeCandidate, config.sessionsDir],
   );
 
+  const abortControllerRef = useRef<AbortController | null>(null);
+
   useInput((input: string, key: { ctrl: boolean }) => {
     if (input === "c" && key.ctrl) {
-      saveCurrentSession()
-        .catch(() => {})
-        .finally(() => exit());
+      if (isLoading && abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        // Clear any stale approval prompt so the UI returns to the input bar
+        pendingApproval?.resolve(false);
+        setPendingApproval(null);
+      } else {
+        saveCurrentSession()
+          .catch((err) => {
+            console.error(
+              "Failed to save session on exit:",
+              err instanceof Error ? err.message : String(err),
+            );
+          })
+          .finally(() => exit());
+      }
+    }
+    if (input === "l" && key.ctrl) {
+      setDisplayMessages([]);
+      setStreamingText("");
     }
   });
 
@@ -288,12 +306,16 @@ export function App({ config, model: initialModel, tools }: Props) {
           }
         : undefined;
 
+      const abortController = new AbortController();
+      abortControllerRef.current = abortController;
+
       try {
         const stream = runAgent(newMessages, {
           model: currentModel,
           config,
           tools,
           onPreToolUse,
+          abortSignal: abortController.signal,
         });
 
         for await (const event of stream) {
@@ -343,6 +365,26 @@ export function App({ config, model: initialModel, tools }: Props) {
         }
       } catch (err) {
         assistantText += `\n\nError: ${err instanceof Error ? err.message : String(err)}`;
+      } finally {
+        // Null the ref immediately on any exit path (normal, aborted, or error) so a
+        // Ctrl+C keypress during error handling cannot produce a spurious [cancelled] message.
+        abortControllerRef.current = null;
+      }
+
+      const wasCancelled = abortController.signal.aborted;
+
+      if (wasCancelled) {
+        const cancelledMsg: DisplayMessage = {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: "[cancelled]",
+          timestamp: Date.now(),
+        };
+        setDisplayMessages((prev) => [...prev, cancelledMsg]);
+        setIsLoading(false);
+        setProgress(INITIAL_PROGRESS);
+        setStreamingText("");
+        return;
       }
 
       if (assistantText || toolCalls.length > 0) {
