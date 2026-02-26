@@ -23,10 +23,32 @@ interface Props {
 
 export function InputBar({ onSubmit, isLoading, commands, progress }: Props) {
   const [inputValue, setInputValue] = useState("");
+  // TextInput (@inkjs/ui) is uncontrolled — it only reads defaultValue on mount.
+  // Incrementing remountKey forces a remount so history navigation values take effect.
   const [remountKey, setRemountKey] = useState(0);
   const [historyValue, setHistoryValue] = useState("");
   const history = useMemo(() => new InputHistory(), []);
 
+  const suggestions = useMemo(() => {
+    if (!commands || !inputValue.startsWith("/")) return undefined;
+
+    // Deduplicate: only use canonical command names, not alias keys
+    const uniqueNames = new Set<string>();
+    for (const cmd of commands.values()) {
+      uniqueNames.add(cmd.name);
+    }
+
+    const partial = inputValue.slice(1).toLowerCase();
+    const names = [...uniqueNames];
+    if (!partial) {
+      return names.map((name) => `/${name}`);
+    }
+
+    return names.filter((name) => name.startsWith(partial)).map((name) => `/${name}`);
+  }, [inputValue, commands]);
+
+  // Placed after the suggestions memo so the closure captures the current computed value
+  // rather than the initial undefined — avoids stale-closure risk if Ink ever memoizes useInput.
   useInput(
     (_, key) => {
       if (suggestions && suggestions.length > 0) return;
@@ -50,24 +72,6 @@ export function InputBar({ onSubmit, isLoading, commands, progress }: Props) {
     },
     { isActive: !isLoading },
   );
-
-  const suggestions = useMemo(() => {
-    if (!commands || !inputValue.startsWith("/")) return undefined;
-
-    // Deduplicate: only use canonical command names, not alias keys
-    const uniqueNames = new Set<string>();
-    for (const cmd of commands.values()) {
-      uniqueNames.add(cmd.name);
-    }
-
-    const partial = inputValue.slice(1).toLowerCase();
-    const names = [...uniqueNames];
-    if (!partial) {
-      return names.map((name) => `/${name}`);
-    }
-
-    return names.filter((name) => name.startsWith(partial)).map((name) => `/${name}`);
-  }, [inputValue, commands]);
 
   if (isLoading) {
     return (

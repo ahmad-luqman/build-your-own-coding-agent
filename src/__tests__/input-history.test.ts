@@ -56,6 +56,16 @@ describe("InputHistory – push", () => {
     h.push("b");
     expect(h.isNavigating()).toBe(false);
   });
+
+  test("push of duplicate while navigating resets navigation without growing history", () => {
+    const h = new InputHistory();
+    h.push("a");
+    h.push("b");
+    h.navigateUp(); // navigating at "b"
+    h.push("b"); // duplicate — should reset without adding
+    expect(h.isNavigating()).toBe(false);
+    expect(h.size).toBe(2);
+  });
 });
 
 describe("InputHistory – navigateUp", () => {
@@ -126,6 +136,23 @@ describe("InputHistory – navigateDown", () => {
   });
 });
 
+describe("InputHistory – full round-trip", () => {
+  test("navigate up twice, back down twice, restores draft and exits navigation", () => {
+    const h = new InputHistory();
+    h.push("cmd1");
+    h.push("cmd2");
+    h.saveDraft("partial");
+
+    h.navigateUp(); // cmd2
+    h.navigateUp(); // cmd1
+    h.navigateDown(); // cmd2
+    const draft = h.navigateDown(); // back to draft
+
+    expect(draft).toBe("partial");
+    expect(h.isNavigating()).toBe(false);
+  });
+});
+
 describe("InputHistory – saveDraft", () => {
   test("draft is empty string initially", () => {
     const h = new InputHistory();
@@ -140,6 +167,15 @@ describe("InputHistory – saveDraft", () => {
     h.saveDraft("my draft");
     h.navigateUp();
     expect(h.navigateDown()).toBe("my draft");
+  });
+
+  test("saveDraft is ignored when already navigating (prevents draft corruption)", () => {
+    const h = new InputHistory();
+    h.push("x");
+    h.saveDraft("original draft");
+    h.navigateUp(); // now navigating
+    h.saveDraft("overwrite attempt"); // should be ignored
+    expect(h.navigateDown()).toBe("original draft");
   });
 
   test("reset clears the draft", () => {

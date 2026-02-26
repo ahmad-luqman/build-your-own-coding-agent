@@ -299,17 +299,17 @@ describe("agent abort signal", () => {
     expect(events).toHaveLength(0);
   });
 
-  test("abort mid-stream stops generator cleanly (no error event)", async () => {
-    const abortError = new Error("This operation was aborted");
-    abortError.name = "AbortError";
+  test("AbortError thrown by stream is caught cleanly (no error event)", async () => {
+    const controller = new AbortController();
+    controller.abort();
 
     mockStreamText.mockImplementation(() => ({
-      // Async iterable that immediately rejects — simulates mid-stream abort
+      // Async iterable that immediately rejects — simulates stream cancellation
       fullStream: {
         [Symbol.asyncIterator]() {
           return {
             next(): Promise<IteratorResult<never>> {
-              return Promise.reject(abortError);
+              return Promise.reject(new DOMException("This operation was aborted", "AbortError"));
             },
           };
         },
@@ -318,7 +318,6 @@ describe("agent abort signal", () => {
       finishReason: Promise.resolve("stop"),
     }));
 
-    const controller = new AbortController();
     const events = await collectEvents([], {
       model: fakeModel,
       config: baseConfig,
@@ -328,6 +327,54 @@ describe("agent abort signal", () => {
     // Generator should return cleanly — no error event, no crash
     const errorEvents = events.filter((e) => e.type === "error");
     expect(errorEvents).toHaveLength(0);
+  });
+
+  test("abort between turns prevents second streamText call", async () => {
+    let streamTextCallCount = 0;
+    const controller = new AbortController();
+
+    mockStreamText.mockImplementation(() => {
+      streamTextCallCount++;
+      controller.abort(); // abort after first call is set up
+      return {
+        fullStream: (async function* () {
+          yield { type: "text-delta", text: "Turn 1" };
+          yield { type: "finish", totalUsage: { inputTokens: 10, outputTokens: 5 } };
+        })(),
+        response: Promise.resolve({ messages: [] }),
+        finishReason: Promise.resolve("tool-calls"), // would loop without abort
+      };
+    });
+
+    await collectEvents([], {
+      model: fakeModel,
+      config: baseConfig,
+      abortSignal: controller.signal,
+    });
+
+    expect(streamTextCallCount).toBe(1);
+  });
+
+  test("non-AbortError thrown by stream propagates to caller", async () => {
+    const networkError = new Error("Connection reset");
+
+    mockStreamText.mockImplementation(() => ({
+      fullStream: {
+        [Symbol.asyncIterator]() {
+          return {
+            next(): Promise<IteratorResult<never>> {
+              return Promise.reject(networkError);
+            },
+          };
+        },
+      },
+      response: Promise.resolve({ messages: [] }),
+      finishReason: Promise.resolve("stop"),
+    }));
+
+    await expect(collectEvents([], { model: fakeModel, config: baseConfig })).rejects.toThrow(
+      "Connection reset",
+    );
   });
 });
 

@@ -98,10 +98,16 @@ export async function* runAgent(
         }
       }
     } catch (err: unknown) {
-      // Abort signal cancelled the stream — stop cleanly
-      if (err instanceof Error && err.name === "AbortError") return;
+      // If our signal fired, stop cleanly — checking signal.aborted is authoritative
+      // and handles all runtimes (DOMException, plain Error, etc.) without name-matching.
+      // All other errors are re-thrown to be handled by the caller.
+      if (abortSignal?.aborted) return;
       throw err;
     }
+
+    // Guard against a late abort that fires after the stream finishes but before
+    // result.response / result.finishReason resolve, which could cause them to reject.
+    if (abortSignal?.aborted) return;
 
     // Append response messages to history
     const response = await result.response;
