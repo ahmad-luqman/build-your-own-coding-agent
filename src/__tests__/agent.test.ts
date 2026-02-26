@@ -276,6 +276,61 @@ describe("agent stream chunk types", () => {
   });
 });
 
+describe("agent abort signal", () => {
+  test("already-aborted signal stops generator immediately (no events)", async () => {
+    mockStreamText.mockImplementation(() => ({
+      fullStream: (async function* () {
+        yield { type: "text-delta", text: "Hello" };
+        yield { type: "finish", totalUsage: { inputTokens: 10, outputTokens: 5 } };
+      })(),
+      response: Promise.resolve({ messages: [] }),
+      finishReason: Promise.resolve("stop"),
+    }));
+
+    const controller = new AbortController();
+    controller.abort();
+
+    const events = await collectEvents([], {
+      model: fakeModel,
+      config: baseConfig,
+      abortSignal: controller.signal,
+    });
+
+    expect(events).toHaveLength(0);
+  });
+
+  test("abort mid-stream stops generator cleanly (no error event)", async () => {
+    const abortError = new Error("This operation was aborted");
+    abortError.name = "AbortError";
+
+    mockStreamText.mockImplementation(() => ({
+      // Async iterable that immediately rejects — simulates mid-stream abort
+      fullStream: {
+        [Symbol.asyncIterator]() {
+          return {
+            next(): Promise<IteratorResult<never>> {
+              return Promise.reject(abortError);
+            },
+          };
+        },
+      },
+      response: Promise.resolve({ messages: [] }),
+      finishReason: Promise.resolve("stop"),
+    }));
+
+    const controller = new AbortController();
+    const events = await collectEvents([], {
+      model: fakeModel,
+      config: baseConfig,
+      abortSignal: controller.signal,
+    });
+
+    // Generator should return cleanly — no error event, no crash
+    const errorEvents = events.filter((e) => e.type === "error");
+    expect(errorEvents).toHaveLength(0);
+  });
+});
+
 describe("buildAITools via runAgent", () => {
   function makeTool(overrides: Partial<ToolDefinition> = {}): ToolDefinition {
     return {
