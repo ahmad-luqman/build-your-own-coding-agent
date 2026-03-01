@@ -1,13 +1,14 @@
 import { Box, Text } from "ink";
 import { renderMarkdown } from "../markdown.js";
-import type { DisplayMessage } from "../types.js";
+import type { DisplayMessage, DisplayToolCall } from "../types.js";
 
 interface Props {
   messages: DisplayMessage[];
   streamingText: string;
+  activeToolCalls?: DisplayToolCall[];
 }
 
-export function MessageList({ messages, streamingText }: Props) {
+export function MessageList({ messages, streamingText, activeToolCalls }: Props) {
   return (
     <Box flexDirection="column" flexGrow={1} paddingX={1}>
       {messages.map((msg) => (
@@ -50,6 +51,29 @@ export function MessageList({ messages, streamingText }: Props) {
           </Box>
         </Box>
       )}
+
+      {activeToolCalls?.map((tc) => (
+        <Box key={tc.toolCallId} marginLeft={2} flexDirection="column">
+          <Text color="yellow">
+            {">"} {tc.toolName}
+            <Text dimColor> {formatToolInput(tc.toolName, tc.input)}</Text>
+          </Text>
+          {tc.streamingOutput && (
+            <Box marginLeft={2}>
+              <Text color="gray" dimColor wrap="wrap">
+                {truncate(tc.streamingOutput, 500)}
+              </Text>
+            </Box>
+          )}
+          {tc.result && (
+            <Box marginLeft={2}>
+              <Text color={tc.result.success ? "gray" : "red"} dimColor wrap="wrap">
+                {tc.result.success ? truncate(tc.result.output, 300) : `Error: ${tc.result.error}`}
+              </Text>
+            </Box>
+          )}
+        </Box>
+      ))}
     </Box>
   );
 }

@@ -25,6 +25,8 @@ export interface ToolResult {
 export interface ToolContext {
   cwd: string;
   abortSignal?: AbortSignal;
+  /** Streaming output callback — called with each chunk of output as it arrives */
+  onOutput?: (chunk: string) => void;
 }
 
 export interface ToolDefinition {
@@ -93,6 +95,8 @@ export interface DisplayToolCall {
   input: Record<string, unknown>;
   result?: ToolResult;
   status: "pending" | "running" | "done" | "error";
+  /** Accumulated streaming output for live TUI display during tool execution */
+  streamingOutput?: string;
 }
 
 // --- Session ---

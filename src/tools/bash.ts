@@ -6,6 +6,33 @@ const inputSchema = z.object({
   timeout: z.number().optional().describe("Timeout in milliseconds (default: 30000)"),
 });
 
+export async function readStream(
+  stream: ReadableStream<Uint8Array> | null,
+  onOutput?: (chunk: string) => void,
+): Promise<string> {
+  if (!stream) return "";
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let accumulated = "";
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const text = decoder.decode(value, { stream: true });
+      accumulated += text;
+      onOutput?.(text);
+    }
+    const remaining = decoder.decode();
+    if (remaining) {
+      accumulated += remaining;
+      onOutput?.(remaining);
+    }
+  } catch {
+    // Stream closed on kill/timeout — return what we have
+  }
+  return accumulated;
+}
+
 export const bashTool: ToolDefinition = {
   name: "bash",
   description:
@@ -24,16 +51,58 @@ export const bashTool: ToolDefinition = {
         env: { ...process.env, TERM: "dumb" },
       });
 
-      const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => {
+      const safeKill = () => {
+        try {
           proc.kill();
-          reject(new Error(`Command timed out after ${timeout}ms`));
-        }, timeout),
-      );
+        } catch {
+          // Process already exited — nothing to kill
+        }
+      };
 
-      const exitCode = await Promise.race([proc.exited, timeoutPromise]);
-      const stdout = await new Response(proc.stdout).text();
-      const stderr = await new Response(proc.stderr).text();
+      // Read both streams concurrently, streaming chunks via onOutput.
+      // Note: stdout and stderr chunks are interleaved in callback order —
+      // the TUI displays them as a single merged stream.
+      const stdoutPromise = readStream(proc.stdout as ReadableStream<Uint8Array>, ctx.onOutput);
+      const stderrPromise = readStream(proc.stderr as ReadableStream<Uint8Array>, ctx.onOutput);
+
+      // Timeout: kill process and reject after timeout
+      let timerId: ReturnType<typeof setTimeout> | undefined;
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timerId = setTimeout(() => {
+          safeKill();
+          reject(new Error(`Command timed out after ${timeout}ms`));
+        }, timeout);
+      });
+
+      // Abort signal: kill process and reject on abort
+      let abortHandler: (() => void) | undefined;
+      const abortPromise = ctx.abortSignal
+        ? new Promise<never>((_, reject) => {
+            abortHandler = () => {
+              safeKill();
+              reject(new Error("Command aborted"));
+            };
+            if (ctx.abortSignal!.aborted) {
+              abortHandler();
+            } else {
+              ctx.abortSignal!.addEventListener("abort", abortHandler, { once: true });
+            }
+          })
+        : undefined;
+
+      // Race: streams + exit vs timeout/abort. Streams drain concurrently with
+      // proc.exited so the OS pipe buffers don't fill up and deadlock the child.
+      const [stdout, stderr, exitCode] = await Promise.race([
+        Promise.all([stdoutPromise, stderrPromise, proc.exited]),
+        timeoutPromise,
+        ...(abortPromise ? [abortPromise] : []),
+      ]);
+
+      // Clean up timer and abort listener on normal completion
+      clearTimeout(timerId);
+      if (abortHandler && ctx.abortSignal) {
+        ctx.abortSignal.removeEventListener("abort", abortHandler);
+      }
 
       const outputParts = [
         stdout && `stdout:\n${stdout.trim()}`,
@@ -56,7 +125,7 @@ export const bashTool: ToolDefinition = {
       };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      return { success: false, output: "", error: msg };
+      return { success: false, output: `command: ${input.command}`, error: msg };
     }
   },
 };
