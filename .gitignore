@@ -6,3 +6,4 @@ dist/
 *.tsbuildinfo
 coverage/
 .claude/
+.grepai/

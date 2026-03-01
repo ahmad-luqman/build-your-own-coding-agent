@@ -8,15 +8,16 @@ interface AgentOptions {
   tools?: Map<string, ToolDefinition>;
   onPreToolUse?: HookHandler;
   abortSignal?: AbortSignal;
+  onToolOutput?: (toolCallId: string, output: string) => void;
 }
 
 export async function* runAgent(
   messages: ModelMessage[],
   options: AgentOptions,
 ): AsyncGenerator<AgentEvent> {
-  const { model, config, tools, onPreToolUse, abortSignal } = options;
+  const { model, config, tools, onPreToolUse, abortSignal, onToolOutput } = options;
 
-  const aiTools = tools ? buildAITools(tools, config.cwd, onPreToolUse) : undefined;
+  const aiTools = tools ? buildAITools(tools, config.cwd, onPreToolUse, onToolOutput) : undefined;
 
   let turn = 0;
 
@@ -125,15 +126,21 @@ function buildAITools(
   tools: Map<string, ToolDefinition>,
   cwd: string,
   onPreToolUse?: HookHandler,
+  onToolOutput?: (toolCallId: string, output: string) => void,
 ): Record<string, unknown> {
   const aiTools: Record<string, unknown> = {};
-  const ctx: ToolContext = { cwd };
 
   for (const [name, def] of tools) {
     aiTools[name] = tool({
       description: def.description,
       inputSchema: def.inputSchema,
-      execute: async (input: Record<string, unknown>) => {
+      execute: async (
+        input: Record<string, unknown>,
+        {
+          toolCallId,
+          abortSignal: toolAbortSignal,
+        }: { toolCallId?: string; abortSignal?: AbortSignal } = {},
+      ) => {
         // Run pre-tool-use hook
         if (onPreToolUse) {
           const decision = await onPreToolUse({ toolName: name, input });
@@ -141,6 +148,14 @@ function buildAITools(
             return { success: false, output: "", error: `Blocked: ${decision.reason}` };
           }
         }
+        const ctx: ToolContext = {
+          cwd,
+          abortSignal: toolAbortSignal,
+          onOutput:
+            onToolOutput && toolCallId
+              ? (chunk: string) => onToolOutput(toolCallId, chunk)
+              : undefined,
+        };
         const result = await def.execute(input, ctx);
         // Return structured data to the model when available, fall back to string
         return result.data ?? result;

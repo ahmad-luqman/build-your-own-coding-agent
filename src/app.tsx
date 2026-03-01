@@ -20,6 +20,7 @@ import type {
   CommandContext,
   CompactionResult,
   DisplayMessage,
+  DisplayToolCall,
   HookDecision,
   SessionListEntry,
   TokenUsage,
@@ -58,6 +59,7 @@ export function App({ config, model: initialModel, tools }: Props) {
   const [currentModelId, setCurrentModelId] = useState(config.modelId);
   const [lastInputTokens, setLastInputTokens] = useState(0);
   const [progress, setProgress] = useState<ProgressState>(INITIAL_PROGRESS);
+  const [activeToolCalls, setActiveToolCalls] = useState<DisplayToolCall[]>([]);
 
   const commandRegistry = useMemo(() => createCommandRegistry(), []);
 
@@ -316,6 +318,15 @@ export function App({ config, model: initialModel, tools }: Props) {
           tools,
           onPreToolUse,
           abortSignal: abortController.signal,
+          onToolOutput: (toolCallId: string, output: string) => {
+            setActiveToolCalls((prev) =>
+              prev.map((tc) =>
+                tc.toolCallId === toolCallId
+                  ? { ...tc, streamingOutput: (tc.streamingOutput ?? "") + output }
+                  : tc,
+              ),
+            );
+          },
         });
 
         for await (const event of stream) {
@@ -338,6 +349,15 @@ export function App({ config, model: initialModel, tools }: Props) {
                 input: event.input,
                 status: "running",
               });
+              setActiveToolCalls((prev) => [
+                ...prev,
+                {
+                  toolName: event.toolName,
+                  toolCallId: event.toolCallId,
+                  input: event.input,
+                  status: "running",
+                },
+              ]);
               break;
 
             case "tool-result": {
@@ -346,6 +366,18 @@ export function App({ config, model: initialModel, tools }: Props) {
                 tc.result = event.result;
                 tc.status = event.result.success ? "done" : "error";
               }
+              setActiveToolCalls((prev) =>
+                prev.map((atc) =>
+                  atc.toolCallId === event.toolCallId
+                    ? {
+                        ...atc,
+                        result: event.result,
+                        status: event.result.success ? "done" : "error",
+                        streamingOutput: undefined,
+                      }
+                    : atc,
+                ),
+              );
               break;
             }
 
@@ -384,6 +416,7 @@ export function App({ config, model: initialModel, tools }: Props) {
         setIsLoading(false);
         setProgress(INITIAL_PROGRESS);
         setStreamingText("");
+        setActiveToolCalls([]);
         return;
       }
 
@@ -402,6 +435,7 @@ export function App({ config, model: initialModel, tools }: Props) {
       setStreamingText("");
       setIsLoading(false);
       setProgress(INITIAL_PROGRESS);
+      setActiveToolCalls([]);
     },
     [
       messages,
@@ -439,7 +473,11 @@ export function App({ config, model: initialModel, tools }: Props) {
         lastInputTokens={lastInputTokens}
         contextLimit={getContextWindowLimit(currentModelId)}
       />
-      <MessageList messages={displayMessages} streamingText={streamingText} />
+      <MessageList
+        messages={displayMessages}
+        streamingText={streamingText}
+        activeToolCalls={activeToolCalls}
+      />
       {pendingApproval ? (
         <ApprovalPrompt
           toolName={pendingApproval.toolName}

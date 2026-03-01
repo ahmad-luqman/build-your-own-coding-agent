@@ -509,3 +509,142 @@ describe("buildAITools via runAgent", () => {
     expect(result).toEqual({ success: true, output: "done" });
   });
 });
+
+describe("onToolOutput callback threading", () => {
+  function makeTool(overrides: Partial<ToolDefinition> = {}): ToolDefinition {
+    return {
+      name: "test_tool",
+      description: "A test tool",
+      inputSchema: z.object({ arg: z.string() }),
+      execute: mock(async () => ({ success: true, output: "done" })),
+      ...overrides,
+    };
+  }
+
+  function setupSimpleStream() {
+    mockStreamText.mockImplementation(() => ({
+      fullStream: (async function* () {
+        yield { type: "text-delta", text: "Hi" };
+        yield { type: "finish", totalUsage: { inputTokens: 10, outputTokens: 5 } };
+      })(),
+      response: Promise.resolve({ messages: [] }),
+      finishReason: Promise.resolve("stop"),
+    }));
+  }
+
+  test("threads onToolOutput into ToolContext as onOutput", async () => {
+    let receivedCtx: any = null;
+    const toolDef = makeTool({
+      execute: mock(async (_input: any, ctx: any) => {
+        receivedCtx = ctx;
+        return { success: true, output: "done" };
+      }),
+    });
+    const toolsMap = new Map([["test_tool", toolDef]]);
+    const onToolOutput = mock(() => {});
+
+    mockTool.mockClear();
+    setupSimpleStream();
+
+    await collectEvents([], {
+      model: fakeModel,
+      config: baseConfig,
+      tools: toolsMap,
+      onToolOutput,
+    });
+
+    const registeredDef = mockTool.mock.results[0]?.value;
+    await registeredDef.execute({ arg: "test" }, { toolCallId: "tc-1" });
+
+    expect(receivedCtx).toBeDefined();
+    expect(typeof receivedCtx.onOutput).toBe("function");
+  });
+
+  test("onOutput calls onToolOutput with correct toolCallId", async () => {
+    const outputChunks: Array<{ toolCallId: string; output: string }> = [];
+    const toolDef = makeTool({
+      execute: mock(async (_input: any, ctx: any) => {
+        ctx.onOutput?.("chunk1");
+        ctx.onOutput?.("chunk2");
+        return { success: true, output: "done" };
+      }),
+    });
+    const toolsMap = new Map([["test_tool", toolDef]]);
+    const onToolOutput = mock((toolCallId: string, output: string) => {
+      outputChunks.push({ toolCallId, output });
+    });
+
+    mockTool.mockClear();
+    setupSimpleStream();
+
+    await collectEvents([], {
+      model: fakeModel,
+      config: baseConfig,
+      tools: toolsMap,
+      onToolOutput,
+    });
+
+    const registeredDef = mockTool.mock.results[0]?.value;
+    await registeredDef.execute({ arg: "test" }, { toolCallId: "tc-42" });
+
+    expect(outputChunks).toEqual([
+      { toolCallId: "tc-42", output: "chunk1" },
+      { toolCallId: "tc-42", output: "chunk2" },
+    ]);
+  });
+
+  test("without onToolOutput, ctx.onOutput is undefined", async () => {
+    let receivedCtx: any = null;
+    const toolDef = makeTool({
+      execute: mock(async (_input: any, ctx: any) => {
+        receivedCtx = ctx;
+        return { success: true, output: "done" };
+      }),
+    });
+    const toolsMap = new Map([["test_tool", toolDef]]);
+
+    mockTool.mockClear();
+    setupSimpleStream();
+
+    // No onToolOutput passed
+    await collectEvents([], {
+      model: fakeModel,
+      config: baseConfig,
+      tools: toolsMap,
+    });
+
+    const registeredDef = mockTool.mock.results[0]?.value;
+    await registeredDef.execute({ arg: "test" }, { toolCallId: "tc-1" });
+
+    expect(receivedCtx.onOutput).toBeUndefined();
+  });
+
+  test("threads abortSignal from ToolExecutionOptions into ToolContext", async () => {
+    let receivedCtx: any = null;
+    const toolDef = makeTool({
+      execute: mock(async (_input: any, ctx: any) => {
+        receivedCtx = ctx;
+        return { success: true, output: "done" };
+      }),
+    });
+    const toolsMap = new Map([["test_tool", toolDef]]);
+
+    mockTool.mockClear();
+    setupSimpleStream();
+
+    await collectEvents([], {
+      model: fakeModel,
+      config: baseConfig,
+      tools: toolsMap,
+    });
+
+    const controller = new AbortController();
+    const registeredDef = mockTool.mock.results[0]?.value;
+    await registeredDef.execute(
+      { arg: "test" },
+      { toolCallId: "tc-1", abortSignal: controller.signal },
+    );
+
+    expect(receivedCtx.abortSignal).toBe(controller.signal);
+  });
+});
