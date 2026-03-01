@@ -319,13 +319,18 @@ export function App({ config, model: initialModel, tools }: Props) {
           onPreToolUse,
           abortSignal: abortController.signal,
           onToolOutput: (toolCallId: string, output: string) => {
-            setActiveToolCalls((prev) =>
-              prev.map((tc) =>
+            setActiveToolCalls((prev) => {
+              const exists = prev.some((tc) => tc.toolCallId === toolCallId);
+              if (!exists) return prev; // Entry not yet registered — drop early chunk
+              return prev.map((tc) =>
                 tc.toolCallId === toolCallId
-                  ? { ...tc, streamingOutput: (tc.streamingOutput ?? "") + output }
+                  ? {
+                      ...tc,
+                      streamingOutput: ((tc.streamingOutput ?? "") + output).slice(-2000),
+                    }
                   : tc,
-              ),
-            );
+              );
+            });
           },
         });
 
@@ -342,41 +347,28 @@ export function App({ config, model: initialModel, tools }: Props) {
               setStreamingText(assistantText);
               break;
 
-            case "tool-call":
-              toolCalls.push({
+            case "tool-call": {
+              const entry: DisplayToolCall = {
                 toolName: event.toolName,
                 toolCallId: event.toolCallId,
                 input: event.input,
                 status: "running",
-              });
-              setActiveToolCalls((prev) => [
-                ...prev,
-                {
-                  toolName: event.toolName,
-                  toolCallId: event.toolCallId,
-                  input: event.input,
-                  status: "running",
-                },
-              ]);
+              };
+              toolCalls.push(entry);
+              setActiveToolCalls((prev) => [...prev, entry]);
               break;
+            }
 
             case "tool-result": {
+              const status = event.result.success ? "done" : "error";
               const tc = toolCalls.find((t) => t.toolCallId === event.toolCallId);
               if (tc) {
                 tc.result = event.result;
-                tc.status = event.result.success ? "done" : "error";
+                tc.status = status;
               }
+              // Remove completed entry — it moves to displayMessages via toolCalls
               setActiveToolCalls((prev) =>
-                prev.map((atc) =>
-                  atc.toolCallId === event.toolCallId
-                    ? {
-                        ...atc,
-                        result: event.result,
-                        status: event.result.success ? "done" : "error",
-                        streamingOutput: undefined,
-                      }
-                    : atc,
-                ),
+                prev.filter((atc) => atc.toolCallId !== event.toolCallId),
               );
               break;
             }

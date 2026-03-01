@@ -51,45 +51,58 @@ export const bashTool: ToolDefinition = {
         env: { ...process.env, TERM: "dumb" },
       });
 
-      // Read both streams concurrently, streaming chunks via onOutput
+      const safeKill = () => {
+        try {
+          proc.kill();
+        } catch {
+          // Process already exited — nothing to kill
+        }
+      };
+
+      // Read both streams concurrently, streaming chunks via onOutput.
+      // Note: stdout and stderr chunks are interleaved in callback order —
+      // the TUI displays them as a single merged stream.
       const stdoutPromise = readStream(proc.stdout as ReadableStream<Uint8Array>, ctx.onOutput);
       const stderrPromise = readStream(proc.stderr as ReadableStream<Uint8Array>, ctx.onOutput);
 
-      const racePromises: Promise<never>[] = [];
-
       // Timeout: kill process and reject after timeout
-      racePromises.push(
-        new Promise<never>((_, reject) =>
-          setTimeout(() => {
-            proc.kill();
-            reject(new Error(`Command timed out after ${timeout}ms`));
-          }, timeout),
-        ),
-      );
+      let timerId: ReturnType<typeof setTimeout> | undefined;
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timerId = setTimeout(() => {
+          safeKill();
+          reject(new Error(`Command timed out after ${timeout}ms`));
+        }, timeout);
+      });
 
       // Abort signal: kill process and reject on abort
-      if (ctx.abortSignal) {
-        racePromises.push(
-          new Promise<never>((_, reject) => {
-            const onAbort = () => {
-              proc.kill();
+      let abortHandler: (() => void) | undefined;
+      const abortPromise = ctx.abortSignal
+        ? new Promise<never>((_, reject) => {
+            abortHandler = () => {
+              safeKill();
               reject(new Error("Command aborted"));
             };
             if (ctx.abortSignal!.aborted) {
-              onAbort();
+              abortHandler();
             } else {
-              ctx.abortSignal!.addEventListener("abort", onAbort, { once: true });
+              ctx.abortSignal!.addEventListener("abort", abortHandler, { once: true });
             }
-          }),
-        );
-      }
+          })
+        : undefined;
 
-      // Race: streams + exit vs timeout/abort. Streams must drain concurrently
-      // with proc.exited to avoid OS pipe buffer deadlocks.
+      // Race: streams + exit vs timeout/abort. Streams drain concurrently with
+      // proc.exited so the OS pipe buffers don't fill up and deadlock the child.
       const [stdout, stderr, exitCode] = await Promise.race([
         Promise.all([stdoutPromise, stderrPromise, proc.exited]),
-        ...racePromises,
+        timeoutPromise,
+        ...(abortPromise ? [abortPromise] : []),
       ]);
+
+      // Clean up timer and abort listener on normal completion
+      clearTimeout(timerId);
+      if (abortHandler && ctx.abortSignal) {
+        ctx.abortSignal.removeEventListener("abort", abortHandler);
+      }
 
       const outputParts = [
         stdout && `stdout:\n${stdout.trim()}`,
@@ -112,7 +125,7 @@ export const bashTool: ToolDefinition = {
       };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      return { success: false, output: "", error: msg };
+      return { success: false, output: `command: ${input.command}`, error: msg };
     }
   },
 };

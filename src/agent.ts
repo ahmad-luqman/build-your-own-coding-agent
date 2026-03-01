@@ -148,6 +148,9 @@ function buildAITools(
             return { success: false, output: "", error: `Blocked: ${decision.reason}` };
           }
         }
+        if (onToolOutput && !toolCallId) {
+          console.warn(`[agent] onToolOutput provided but toolCallId missing for tool "${name}"`);
+        }
         const ctx: ToolContext = {
           cwd,
           abortSignal: toolAbortSignal,

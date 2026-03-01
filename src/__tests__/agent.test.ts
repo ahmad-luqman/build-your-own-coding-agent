@@ -647,4 +647,30 @@ describe("onToolOutput callback threading", () => {
 
     expect(receivedCtx.abortSignal).toBe(controller.signal);
   });
+
+  test("warns when onToolOutput provided but toolCallId missing", async () => {
+    const toolDef = makeTool();
+    const toolsMap = new Map([["test_tool", toolDef]]);
+    const onToolOutput = mock(() => {});
+    const warnSpy = mock(() => {});
+    const origWarn = console.warn;
+    console.warn = warnSpy;
+
+    mockTool.mockClear();
+    setupSimpleStream();
+
+    await collectEvents([], {
+      model: fakeModel,
+      config: baseConfig,
+      tools: toolsMap,
+      onToolOutput,
+    });
+
+    const registeredDef = mockTool.mock.results[0]?.value;
+    // Call without toolCallId to trigger warning
+    await registeredDef.execute({ arg: "test" }, {});
+
+    console.warn = origWarn;
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("toolCallId missing"));
+  });
 });

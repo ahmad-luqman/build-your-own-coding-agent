@@ -152,6 +152,30 @@ describe("bash streaming output", () => {
     expect(result.success).toBe(false);
     expect(result.error).toContain("aborted");
   }, 5000);
+
+  test("cleans up abort listener when command completes normally", async () => {
+    const controller = new AbortController();
+    const result = await bashTool.execute(
+      { command: "echo done" },
+      { cwd: tmpdir(), abortSignal: controller.signal },
+    );
+    expect(result.success).toBe(true);
+    expect(result.data?.stdout).toBe("done");
+    // Signal was never aborted — listener was cleaned up on normal completion
+    expect(controller.signal.aborted).toBe(false);
+  });
+
+  test("outer catch preserves command in output on error", async () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    const result = await bashTool.execute(
+      { command: "my-special-cmd" },
+      { cwd: tmpdir(), abortSignal: controller.signal },
+    );
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("my-special-cmd");
+  }, 5000);
 });
 
 describe("readStream", () => {
