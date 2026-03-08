@@ -179,11 +179,20 @@ export const multiEditTool: ToolDefinition = {
       }
 
       // Phase 3: Build result — edits are committed, so always report success
+      const allDetails: EditDetail[] = [];
+      for (const file of validated) {
+        allDetails.push(...file.editDetails);
+      }
+
+      const baseData = {
+        fileResults: allDetails,
+        totalFilesEdited: validated.length,
+        totalEditsApplied: input.edits.length,
+      };
+
       try {
-        const allDetails: EditDetail[] = [];
         const diffParts: string[] = [];
         for (const file of validated) {
-          allDetails.push(...file.editDetails);
           const diff = formatDiff(file.originalContent, file.finalContent, file.resolvedPath);
           if (diff) {
             diffParts.push(diff);
@@ -191,23 +200,12 @@ export const multiEditTool: ToolDefinition = {
         }
 
         const output = diffParts.join("\n") || `Edited ${validated.length} file(s)`;
-        return {
-          success: true,
-          output,
-          data: {
-            fileResults: allDetails,
-            totalFilesEdited: validated.length,
-            totalEditsApplied: input.edits.length,
-          },
-        };
+        return { success: true, output, data: baseData };
       } catch {
         return {
           success: true,
           output: `Edited ${validated.length} file(s) (diff unavailable)`,
-          data: {
-            totalFilesEdited: validated.length,
-            totalEditsApplied: input.edits.length,
-          },
+          data: baseData,
         };
       }
     } catch (err) {

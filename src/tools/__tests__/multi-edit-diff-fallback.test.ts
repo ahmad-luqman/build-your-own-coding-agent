@@ -40,6 +40,10 @@ describe("multiEditTool (diff fallback)", () => {
     expect(result.output).toContain("diff unavailable");
     expect(result.data?.totalFilesEdited).toBe(1);
     expect(result.data?.totalEditsApplied).toBe(1);
+    // fileResults must still be present even when diff fails
+    const fileResults = result.data?.fileResults as Array<{ editLine: number }>;
+    expect(fileResults).toHaveLength(1);
+    expect(fileResults[0].editLine).toBe(1);
     // File should be modified
     expect(readFileSync(join(testDir, "a.txt"), "utf-8")).toBe("goodbye\n");
   });
