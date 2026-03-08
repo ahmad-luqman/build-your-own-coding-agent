@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { formatPreview } from "../ApprovalPrompt.js";
 import { formatToolInput, formatToolSummary, truncate } from "../MessageList.js";
 
 describe("formatToolSummary", () => {
@@ -107,6 +108,37 @@ describe("formatToolSummary", () => {
     expect(result).toBe("src/foo.ts");
   });
 
+  test("multi_edit with edit and file counts", () => {
+    const result = formatToolSummary(
+      "multi_edit",
+      { edits: [] },
+      {
+        success: true,
+        output: "...",
+        data: { totalEditsApplied: 3, totalFilesEdited: 2 },
+      },
+    );
+    expect(result).toBe("3 edits applied across 2 files");
+  });
+
+  test("multi_edit singular forms", () => {
+    const result = formatToolSummary(
+      "multi_edit",
+      { edits: [] },
+      {
+        success: true,
+        output: "...",
+        data: { totalEditsApplied: 1, totalFilesEdited: 1 },
+      },
+    );
+    expect(result).toBe("1 edit applied across 1 file");
+  });
+
+  test("multi_edit without data defaults to zero", () => {
+    const result = formatToolSummary("multi_edit", { edits: [] }, { success: true, output: "..." });
+    expect(result).toBe("0 edits applied across 0 files");
+  });
+
   test("glob with file count", () => {
     const result = formatToolSummary(
       "glob",
@@ -201,6 +233,25 @@ describe("formatToolInput", () => {
     expect(formatToolInput("edit_file", { file_path: "src/app.ts" })).toBe("src/app.ts");
   });
 
+  test("multi_edit returns edit and file count", () => {
+    const result = formatToolInput("multi_edit", {
+      edits: [{ file_path: "a.ts" }, { file_path: "b.ts" }, { file_path: "a.ts" }],
+    });
+    expect(result).toBe("3 edits in 2 files");
+  });
+
+  test("multi_edit singular forms", () => {
+    const result = formatToolInput("multi_edit", {
+      edits: [{ file_path: "a.ts" }],
+    });
+    expect(result).toBe("1 edit in 1 file");
+  });
+
+  test("multi_edit without edits array falls back to JSON", () => {
+    const result = formatToolInput("multi_edit", { something: "else" });
+    expect(result).toContain("something");
+  });
+
   test("glob returns pattern", () => {
     expect(formatToolInput("glob", { pattern: "**/*.ts" })).toBe("**/*.ts");
   });
@@ -228,6 +279,61 @@ describe("formatToolInput", () => {
     for (let i = 0; i < 20; i++) input[`key${i}`] = `value${i}`;
     const result = formatToolInput("custom", input);
     expect(result.length).toBeLessThanOrEqual(80);
+  });
+});
+
+describe("formatPreview", () => {
+  test("bash returns command", () => {
+    expect(formatPreview("bash", { command: "npm test" })).toBe("npm test");
+  });
+
+  test("bash falls back to JSON when command is not string", () => {
+    const result = formatPreview("bash", { command: 123 });
+    expect(result).toContain("123");
+  });
+
+  test("write_file returns path with char count", () => {
+    expect(formatPreview("write_file", { file_path: "a.ts", content: "hello" })).toBe(
+      "a.ts (5 chars)",
+    );
+  });
+
+  test("write_file without file_path falls back to JSON", () => {
+    const result = formatPreview("write_file", { content: "hello" });
+    expect(result).toContain("hello");
+  });
+
+  test("edit_file returns file path", () => {
+    expect(formatPreview("edit_file", { file_path: "a.ts" })).toBe("a.ts");
+  });
+
+  test("edit_file without file_path falls back to JSON", () => {
+    const result = formatPreview("edit_file", { other: "val" });
+    expect(result).toContain("other");
+  });
+
+  test("multi_edit shows per-file edit counts", () => {
+    const result = formatPreview("multi_edit", {
+      edits: [{ file_path: "a.ts" }, { file_path: "b.ts" }, { file_path: "a.ts" }],
+    });
+    expect(result).toContain("3 edits across 2 files:");
+    expect(result).toContain("a.ts (2 edits)");
+    expect(result).toContain("b.ts (1 edit)");
+  });
+
+  test("multi_edit singular forms", () => {
+    const result = formatPreview("multi_edit", { edits: [{ file_path: "a.ts" }] });
+    expect(result).toContain("1 edit across 1 file:");
+  });
+
+  test("multi_edit without edits array falls back to JSON", () => {
+    const result = formatPreview("multi_edit", { other: "val" });
+    expect(result).toContain("other");
+  });
+
+  test("unknown tool returns truncated JSON", () => {
+    const result = formatPreview("custom", { key: "value" });
+    expect(result).toContain("key");
   });
 });
 

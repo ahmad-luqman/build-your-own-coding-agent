@@ -200,7 +200,7 @@ export function MessageList({
 }
 
 function isFileMod(toolName: string): boolean {
-  return toolName === "edit_file" || toolName === "write_file";
+  return toolName === "edit_file" || toolName === "write_file" || toolName === "multi_edit";
 }
 
 export function formatToolInput(toolName: string, input: Record<string, unknown>): string {
@@ -211,6 +211,14 @@ export function formatToolInput(toolName: string, input: Record<string, unknown>
       return String(input.file_path ?? "");
     case "edit_file":
       return String(input.file_path ?? "");
+    case "multi_edit": {
+      const edits = input.edits;
+      if (Array.isArray(edits)) {
+        const files = new Set(edits.map((e: { file_path?: string }) => String(e.file_path ?? "")));
+        return `${edits.length} edit${edits.length === 1 ? "" : "s"} in ${files.size} file${files.size === 1 ? "" : "s"}`;
+      }
+      return JSON.stringify(input).slice(0, 80);
+    }
     case "glob":
       return String(input.pattern ?? "");
     case "grep":
@@ -267,6 +275,11 @@ export function formatToolSummary(
         return `${path} (line ${line}, +${added}/-${removed})`;
       }
       return path;
+    }
+    case "multi_edit": {
+      const total = d?.totalEditsApplied ?? 0;
+      const files = d?.totalFilesEdited ?? 0;
+      return `${total} edit${total === 1 ? "" : "s"} applied across ${files} file${files === 1 ? "" : "s"}`;
     }
     case "glob": {
       const count = d?.count ?? 0;

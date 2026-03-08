@@ -62,6 +62,7 @@ function getSystemPrompt(): string {
 - **tree**: Show directory structure with file sizes and counts (respects .gitignore)
 - **write_file**: Create or overwrite files (requires approval)
 - **edit_file**: Make surgical edits by replacing exact string matches (requires approval)
+- **multi_edit**: Apply multiple edits atomically across files (requires approval)
 - **bash**: Run shell commands (requires approval)
 
 ## Guidelines
