@@ -74,14 +74,6 @@ export function InputBar({ onSubmit, isLoading, commands, progress, disabled }: 
     { isActive: !isLoading && !disabled },
   );
 
-  if (disabled) {
-    return (
-      <Box paddingX={1}>
-        <Text dimColor>Browse mode: ↑↓ navigate, Enter toggle, Esc exit</Text>
-      </Box>
-    );
-  }
-
   if (isLoading) {
     return (
       <Box paddingX={1}>
@@ -91,24 +83,31 @@ export function InputBar({ onSubmit, isLoading, commands, progress, disabled }: 
   }
 
   return (
-    <Box paddingX={1}>
-      <Text bold color="cyan">
-        &gt;{" "}
-      </Text>
-      <TextInput
-        key={remountKey}
-        defaultValue={historyValue}
-        placeholder="Ask me anything..."
-        suggestions={suggestions}
-        onChange={setInputValue}
-        onSubmit={(value) => {
-          if (value.trim()) history.push(value);
-          history.reset();
-          setHistoryValue("");
-          setInputValue("");
-          onSubmit(value);
-        }}
-      />
-    </Box>
+    <>
+      {disabled && (
+        <Box paddingX={1}>
+          <Text dimColor>Browse mode: ↑↓ navigate, Enter toggle, Esc exit</Text>
+        </Box>
+      )}
+      <Box paddingX={1} display={disabled ? "none" : "flex"}>
+        <Text bold color="cyan">
+          &gt;{" "}
+        </Text>
+        <TextInput
+          key={remountKey}
+          defaultValue={historyValue}
+          placeholder="Ask me anything..."
+          suggestions={suggestions}
+          onChange={setInputValue}
+          onSubmit={(value) => {
+            if (value.trim()) history.push(value);
+            history.reset();
+            setHistoryValue("");
+            setInputValue("");
+            onSubmit(value);
+          }}
+        />
+      </Box>
+    </>
   );
 }
