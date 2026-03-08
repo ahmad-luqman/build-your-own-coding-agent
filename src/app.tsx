@@ -60,6 +60,7 @@ export function App({ config, model: initialModel, tools }: Props) {
   const [lastInputTokens, setLastInputTokens] = useState(0);
   const [progress, setProgress] = useState<ProgressState>(INITIAL_PROGRESS);
   const [activeToolCalls, setActiveToolCalls] = useState<DisplayToolCall[]>([]);
+  const [browseMode, setBrowseMode] = useState(false);
 
   const commandRegistry = useMemo(() => createCommandRegistry(), []);
 
@@ -182,8 +183,17 @@ export function App({ config, model: initialModel, tools }: Props) {
     if (input === "l" && key.ctrl) {
       setDisplayMessages([]);
       setStreamingText("");
+      setBrowseMode(false);
+    }
+    if (input === "e" && key.ctrl) {
+      setBrowseMode((prev) => !prev);
     }
   });
+
+  // Auto-exit browse mode when loading starts or approval prompt appears
+  useEffect(() => {
+    if (isLoading || pendingApproval) setBrowseMode(false);
+  }, [isLoading, pendingApproval]);
 
   const handleApprovalDecision = useCallback(
     (approved: boolean) => {
@@ -469,6 +479,8 @@ export function App({ config, model: initialModel, tools }: Props) {
         messages={displayMessages}
         streamingText={streamingText}
         activeToolCalls={activeToolCalls}
+        browseMode={browseMode}
+        onBrowseModeChange={setBrowseMode}
       />
       {pendingApproval ? (
         <ApprovalPrompt
@@ -482,6 +494,7 @@ export function App({ config, model: initialModel, tools }: Props) {
           isLoading={isLoading}
           commands={commandRegistry}
           progress={progress}
+          disabled={browseMode}
         />
       )}
     </Box>

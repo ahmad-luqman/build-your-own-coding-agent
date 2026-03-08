@@ -19,9 +19,10 @@ interface Props {
   isLoading: boolean;
   commands?: Map<string, CommandDefinition>;
   progress?: ProgressState;
+  disabled?: boolean;
 }
 
-export function InputBar({ onSubmit, isLoading, commands, progress }: Props) {
+export function InputBar({ onSubmit, isLoading, commands, progress, disabled }: Props) {
   const [inputValue, setInputValue] = useState("");
   // TextInput (@inkjs/ui) is uncontrolled — it only reads defaultValue on mount.
   // Incrementing remountKey forces a remount so history navigation values take effect.
@@ -70,8 +71,16 @@ export function InputBar({ onSubmit, isLoading, commands, progress }: Props) {
         }
       }
     },
-    { isActive: !isLoading },
+    { isActive: !isLoading && !disabled },
   );
+
+  if (disabled) {
+    return (
+      <Box paddingX={1}>
+        <Text dimColor>Browse mode: ↑↓ navigate, Enter toggle, Esc exit</Text>
+      </Box>
+    );
+  }
 
   if (isLoading) {
     return (
