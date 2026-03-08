@@ -17,18 +17,13 @@ See [future-architecture.md](future-architecture.md) for detailed ASCII diagrams
 | 11 | [Keyboard Shortcuts](stories/11-keyboard-shortcuts.md) | [#11](https://github.com/ahmad-luqman/build-your-own-coding-agent/issues/11) | Merged (#27) |
 | 4 | [Streaming Tool Output](stories/04-streaming-tool-output.md) | [#4](https://github.com/ahmad-luqman/build-your-own-coding-agent/issues/4) | Merged (#28) |
 | 10 | [Tool Call Collapsing](stories/10-tool-call-collapsing.md) | [#10](https://github.com/ahmad-luqman/build-your-own-coding-agent/issues/10) | Merged (#29) |
-
-## In Progress
-
-| # | Story | Issue | PR | Priority | Effort |
-|---|-------|-------|----|----------|--------|
-| 9 | [Syntax-Highlighted Diffs](stories/09-syntax-highlighted-diffs.md) | [#9](https://github.com/ahmad-luqman/build-your-own-coding-agent/issues/9) | [#30](https://github.com/ahmad-luqman/build-your-own-coding-agent/pull/30) | Low | Medium |
+| 9 | [Syntax-Highlighted Diffs](stories/09-syntax-highlighted-diffs.md) | [#9](https://github.com/ahmad-luqman/build-your-own-coding-agent/issues/9) | Merged (#30) |
+| 5 | [Multi-File Edit](stories/05-multi-file-edit.md) | [#5](https://github.com/ahmad-luqman/build-your-own-coding-agent/issues/5) | Merged (#31) |
 
 ## Open Stories
 
 | # | Story | Issue | Priority | Effort |
 |---|-------|-------|----------|--------|
-| 5 | [Multi-File Edit](stories/05-multi-file-edit.md) | [#5](https://github.com/ahmad-luqman/build-your-own-coding-agent/issues/5) | Medium | Medium |
 | 6 | [Undo / Rollback](stories/06-undo-rollback.md) | [#6](https://github.com/ahmad-luqman/build-your-own-coding-agent/issues/6) | Medium | Medium |
 | 13 | [MCP Support](stories/13-mcp-support.md) | [#13](https://github.com/ahmad-luqman/build-your-own-coding-agent/issues/13) | Medium | Large |
 | 14 | [Plugin System](stories/14-plugin-system.md) | [#14](https://github.com/ahmad-luqman/build-your-own-coding-agent/issues/14) | Medium | Large |
@@ -50,22 +45,22 @@ Ordered by dependency chains and impact. Items in the same tier are independent 
 | 2 | [#7 Directory tree tool](https://github.com/ahmad-luqman/build-your-own-coding-agent/issues/7) | ✅ Merged (#25) |
 | 3 | [#8 Project context injection](https://github.com/ahmad-luqman/build-your-own-coding-agent/issues/8) | ✅ Merged (#26) |
 
-### Tier 2: Core UX improvements ✅ (1 in progress)
+### Tier 2: Core UX improvements ✅
 
 | Order | Issue | Status |
 |-------|-------|--------|
 | 4 | [#11 Keyboard shortcuts](https://github.com/ahmad-luqman/build-your-own-coding-agent/issues/11) | ✅ Merged (#27) |
 | 5 | [#4 Streaming bash output](https://github.com/ahmad-luqman/build-your-own-coding-agent/issues/4) | ✅ Merged (#28) |
 | 6 | [#10 Collapsible tool results](https://github.com/ahmad-luqman/build-your-own-coding-agent/issues/10) | ✅ Merged (#29) |
-| 7 | [#9 Syntax-highlighted diffs](https://github.com/ahmad-luqman/build-your-own-coding-agent/issues/9) | 🔄 PR #30 open |
+| 7 | [#9 Syntax-highlighted diffs](https://github.com/ahmad-luqman/build-your-own-coding-agent/issues/9) | ✅ Merged (#30) |
 
 ### Tier 3: Power features
 
 New capabilities that make the agent more effective at complex tasks.
 
-| Order | Issue | Rationale |
-|-------|-------|-----------|
-| 8 | [#5 Multi-file edit tool](https://github.com/ahmad-luqman/build-your-own-coding-agent/issues/5) | Atomic multi-file edits, reduces turn count for refactors |
+| Order | Issue | Status |
+|-------|-------|--------|
+| 8 | [#5 Multi-file edit tool](https://github.com/ahmad-luqman/build-your-own-coding-agent/issues/5) | ✅ Merged (#31) |
 | 9 | [#6 Undo/rollback](https://github.com/ahmad-luqman/build-your-own-coding-agent/issues/6) | File snapshot infra, pairs with multi-edit (#5) |
 | 10 | [#15 Parallel tool calls](https://github.com/ahmad-luqman/build-your-own-coding-agent/issues/15) | Agent loop change, benefits from stable tool set |
 
@@ -98,10 +93,10 @@ Major refactors best done when the feature set is stable.
                  │
 ✅ #11 Keyboard ─┤
   └─► ✅ #4 Streaming
-✅ #10 Collapse ─┤ (Tier 2 — 1 remaining)
-  └─► 🔄 #9 Diffs (PR #30)
+✅ #10 Collapse ─┤ (Tier 2 — done)
+  └─► ✅ #9 Diffs
                  │
-   #5  Multi-edit┤
+✅ #5  Multi-edit┤
      └─► #6 Undo (pairs with multi-edit)
    #15 Parallel ─┤ (Tier 3)
                  │
@@ -109,4 +104,47 @@ Major refactors best done when the feature set is stable.
 ✅ #3 ──┘
                  │
    #14 Plugins ─► #13 MCP ─► #16 Agent-as-library (Tier 5)
+                 │
+   TodoWrite ─► Subagents ─► Background Tasks ─► Agent Teams (Tier 6)
 ```
+
+---
+
+## Comparison with learn-claude-code
+
+Reference: [learn-claude-code](https://github.com/shareAI-lab/learn-claude-code) — a 12-session progressive course on building Claude Code-like agents. Core philosophy: *"The model is the agent. Our job is to give it tools and stay out of the way."*
+
+### What we have
+
+| Course Session | Concept | Our Implementation |
+|---|---|---|
+| s01 Agent Loop | `while loop + tool dispatch` | `src/agent.ts` — async generator with `streamText()` |
+| s02 Tools | Registry-based dispatch | `src/tools/registry.ts` — `Map<string, ToolDefinition>` |
+| s05 Skills | Dynamic knowledge injection | `src/context/project-context.ts` — CLAUDE.md injection |
+| s06 Compact | Context compression | `src/context/compactor.ts` — summary-based compaction |
+
+Plus features the course doesn't cover: session persistence, slash commands, hook system (pre-tool-use guards), syntax-highlighted diffs, streaming tool output, collapsible tool results, multi-file atomic edits.
+
+### What we're missing
+
+| Course Session | Concept | Description | Effort | Priority |
+|---|---|---|---|---|
+| **s03 TodoWrite** | Planning tool | Agent outlines steps before acting; prevents drift on complex tasks | Small | High |
+| **s04 Subagents** | Context isolation | Independent `messages[]` per subtask; keeps main conversation clean | Medium | High |
+| **s07 Tasks** | Persistent task graphs | File-based CRUD with dependencies; resumable multi-step workflows | Medium | Medium |
+| **s08 Background Tasks** | Async execution | Slow operations run in background while agent continues reasoning | Small | Medium |
+| **s09 Agent Teams** | Multi-agent coordination | Delegate work to persistent teammates via async mailboxes | Large | Low |
+| **s10 Team Protocols** | Negotiation patterns | Standardized request-response across all agent interactions | Medium | Low |
+| **s11 Autonomous Agents** | Self-assigned work | Agents claim tasks from a shared board without explicit delegation | Medium | Low |
+| **s12 Worktree Isolation** | Isolated file systems | Each agent works in its own git worktree; safe parallel changes | Medium | Low |
+
+### Tier 6: Agent intelligence (future)
+
+Inspired by the learn-claude-code curriculum. These build on a stable tool set and agent loop.
+
+| Order | Feature | Rationale |
+|-------|---------|-----------|
+| 17 | **TodoWrite tool** | ~50 LOC planning tool. Forces step-by-step planning before execution. Prevents aimless drift on multi-step tasks. No dependencies. |
+| 18 | **Subagents** | Independent message arrays per subtask. Pairs with #15 (parallel tool calls) for context-isolated parallel execution. |
+| 19 | **Background tasks** | Async daemon threads for slow operations (large file searches, test runs). Agent continues reasoning while waiting. |
+| 20 | **Agent teams** | Multi-agent coordination via persistent mailboxes. Enables delegation and parallel work across isolated worktrees (#12-style). Depends on subagents and task persistence. |
