@@ -20,7 +20,7 @@ function getLang(filePath: string): string | undefined {
 function highlightContent(content: string, lang: string | undefined): string {
   if (!lang) return content;
   try {
-    return highlight(content, { language: lang, ignoreIllegals: true }).trimEnd();
+    return highlight(content, { language: lang, ignoreIllegals: true });
   } catch {
     return content;
   }

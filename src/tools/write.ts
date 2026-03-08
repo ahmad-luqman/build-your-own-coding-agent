@@ -23,8 +23,8 @@ export const writeTool: ToolDefinition = {
       let oldContent: string | null = null;
       try {
         oldContent = await readFile(filePath, "utf-8");
-      } catch {
-        // New file — no previous content
+      } catch (e: unknown) {
+        if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
       }
 
       await mkdir(dirname(filePath), { recursive: true });
