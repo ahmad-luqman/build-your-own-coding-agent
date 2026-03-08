@@ -1,7 +1,10 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
+// Capture real module before mocking so we can restore it in afterAll
+const { formatDiff: realFormatDiff } = await import("../../diff.js");
 
 // Mock formatDiff to throw, simulating a diff library failure
 mock.module("../../diff.js", () => ({
@@ -25,6 +28,13 @@ describe("multiEditTool (diff fallback)", () => {
 
   afterEach(() => {
     rmSync(testDir, { recursive: true, force: true });
+  });
+
+  // Restore real module so the mock doesn't leak into other test files
+  afterAll(() => {
+    mock.module("../../diff.js", () => ({
+      formatDiff: realFormatDiff,
+    }));
   });
 
   test("returns success with fallback output when diff generation fails", async () => {
