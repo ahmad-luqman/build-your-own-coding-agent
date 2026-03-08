@@ -1,6 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { z } from "zod";
+import { formatDiff } from "../diff.js";
 import type { ToolDefinition } from "../types.js";
 
 const inputSchema = z.object({
@@ -42,9 +43,10 @@ export const editTool: ToolDefinition = {
       const linesRemoved = input.old_string.split("\n").length;
       const linesAdded = input.new_string.split("\n").length;
 
+      const diffOutput = formatDiff(content, newContent, filePath);
       return {
         success: true,
-        output: `Edited ${filePath}`,
+        output: diffOutput || `Edited ${filePath}`,
         data: {
           filePath,
           editLine,

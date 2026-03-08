@@ -1,6 +1,13 @@
 import { type ModelMessage, streamText, tool } from "ai";
 import type { AgentModel } from "./model.js";
-import type { AgentConfig, AgentEvent, HookHandler, ToolContext, ToolDefinition } from "./types.js";
+import type {
+  AgentConfig,
+  AgentEvent,
+  HookHandler,
+  ToolContext,
+  ToolDefinition,
+  ToolResult,
+} from "./types.js";
 
 interface AgentOptions {
   model: AgentModel;
@@ -17,7 +24,9 @@ export async function* runAgent(
 ): AsyncGenerator<AgentEvent> {
   const { model, config, tools, onPreToolUse, abortSignal, onToolOutput } = options;
 
-  const aiTools = tools ? buildAITools(tools, config.cwd, onPreToolUse, onToolOutput) : undefined;
+  const built = tools ? buildAITools(tools, config.cwd, onPreToolUse, onToolOutput) : undefined;
+  const aiTools = built?.aiTools;
+  const resultStash = built?.resultStash ?? new Map<string, ToolResult>();
 
   let turn = 0;
 
@@ -51,18 +60,21 @@ export async function* runAgent(
             };
             break;
 
-          case "tool-result":
+          case "tool-result": {
+            const stashed = resultStash.get(chunk.toolCallId);
+            resultStash.delete(chunk.toolCallId);
             yield {
               type: "tool-result",
               toolName: chunk.toolName,
               toolCallId: chunk.toolCallId,
-              result: {
+              result: stashed ?? {
                 success: true,
                 output:
                   typeof chunk.output === "string" ? chunk.output : JSON.stringify(chunk.output),
               },
             };
             break;
+          }
 
           case "tool-error":
             yield {
@@ -127,8 +139,9 @@ function buildAITools(
   cwd: string,
   onPreToolUse?: HookHandler,
   onToolOutput?: (toolCallId: string, output: string) => void,
-): Record<string, unknown> {
+): { aiTools: Record<string, unknown>; resultStash: Map<string, ToolResult> } {
   const aiTools: Record<string, unknown> = {};
+  const resultStash = new Map<string, ToolResult>();
 
   for (const [name, def] of tools) {
     aiTools[name] = tool({
@@ -160,11 +173,16 @@ function buildAITools(
               : undefined,
         };
         const result = await def.execute(input, ctx);
+        // Stash the full ToolResult so the agent generator can yield it with
+        // the human-readable output intact (model only sees data).
+        if (toolCallId) {
+          resultStash.set(toolCallId, result);
+        }
         // Return structured data to the model when available, fall back to string
         return result.data ?? result;
       },
     }) as any;
   }
 
-  return aiTools;
+  return { aiTools, resultStash };
 }

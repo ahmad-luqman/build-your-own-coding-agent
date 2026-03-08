@@ -1,6 +1,7 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { z } from "zod";
+import { formatDiff, formatNewFile } from "../diff.js";
 import type { ToolDefinition } from "../types.js";
 
 const inputSchema = z.object({
@@ -18,18 +19,31 @@ export const writeTool: ToolDefinition = {
   execute: async (input, ctx) => {
     try {
       const filePath = resolve(ctx.cwd, input.file_path);
+
+      let oldContent: string | null = null;
+      try {
+        oldContent = await readFile(filePath, "utf-8");
+      } catch {
+        // New file — no previous content
+      }
+
       await mkdir(dirname(filePath), { recursive: true });
       await writeFile(filePath, input.content, "utf-8");
 
       const lines = input.content.split("\n").length;
+      const isNewFile = oldContent === null;
+      const diffOutput = isNewFile
+        ? formatNewFile(input.content, filePath)
+        : formatDiff(oldContent as string, input.content, filePath);
 
       return {
         success: true,
-        output: `Wrote ${input.content.length} chars to ${filePath}`,
+        output: diffOutput || `Wrote ${input.content.length} chars to ${filePath}`,
         data: {
           filePath,
           bytesWritten: input.content.length,
           linesWritten: lines,
+          isNewFile,
         },
       };
     } catch (err) {
