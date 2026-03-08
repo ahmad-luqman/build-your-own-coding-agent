@@ -134,8 +134,12 @@ export function MessageList({
                 </Text>
                 {tc.result && isExpanded && tc.result.success && (
                   <Box marginLeft={2}>
-                    <Text color="gray" dimColor wrap="wrap">
-                      {truncate(tc.result.output, 2000)}
+                    <Text
+                      color={isFileMod(tc.toolName) ? undefined : "gray"}
+                      dimColor={!isFileMod(tc.toolName)}
+                      wrap="wrap"
+                    >
+                      {truncate(tc.result.output, isFileMod(tc.toolName) ? 2000 : 2000)}
                     </Text>
                   </Box>
                 )}
@@ -178,8 +182,14 @@ export function MessageList({
           )}
           {tc.result && (
             <Box marginLeft={2}>
-              <Text color={tc.result.success ? "gray" : "red"} dimColor wrap="wrap">
-                {tc.result.success ? truncate(tc.result.output, 300) : `Error: ${tc.result.error}`}
+              <Text
+                color={isFileMod(tc.toolName) ? undefined : tc.result.success ? "gray" : "red"}
+                dimColor={!isFileMod(tc.toolName)}
+                wrap="wrap"
+              >
+                {tc.result.success
+                  ? truncate(tc.result.output, isFileMod(tc.toolName) ? 2000 : 300)
+                  : `Error: ${tc.result.error}`}
               </Text>
             </Box>
           )}
@@ -187,6 +197,10 @@ export function MessageList({
       ))}
     </Box>
   );
+}
+
+function isFileMod(toolName: string): boolean {
+  return toolName === "edit_file" || toolName === "write_file";
 }
 
 export function formatToolInput(toolName: string, input: Record<string, unknown>): string {

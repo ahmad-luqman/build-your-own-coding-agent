@@ -85,6 +85,22 @@ describe("editTool", () => {
     expect(readFileSync(filePath, "utf-8")).toBe("a\nx\ny\nz\nd\n");
   });
 
+  test("output contains diff with removed and added content", async () => {
+    const filePath = join(testDir, "test.txt");
+    writeFileSync(filePath, "hello world\nfoo bar\n");
+
+    const result = await editTool.execute(
+      { file_path: "test.txt", old_string: "hello world", new_string: "goodbye world" },
+      ctx,
+    );
+
+    expect(result.success).toBe(true);
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: needed to strip ANSI
+    const plain = result.output.replace(/\x1b\[[0-9;]*m/g, "");
+    expect(plain).toContain("- hello world");
+    expect(plain).toContain("+ goodbye world");
+  });
+
   test("fails on non-existent file", async () => {
     const result = await editTool.execute(
       { file_path: "no-such-file.txt", old_string: "x", new_string: "y" },

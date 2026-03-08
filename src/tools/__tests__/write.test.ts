@@ -69,12 +69,43 @@ describe("writeTool", () => {
     expect(result.data?.filePath).toContain("output.txt");
   });
 
-  test("output includes character count", async () => {
+  test("new file output contains added content", async () => {
     const result = await writeTool.execute(
       { file_path: "out.txt", content: "abc" },
       { cwd: testDir },
     );
-    expect(result.output).toContain("3 chars");
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: needed to strip ANSI
+    const plain = result.output.replace(/\x1b\[[0-9;]*m/g, "");
+    expect(plain).toContain("+ abc");
+  });
+
+  test("overwrite produces diff with old and new content", async () => {
+    const { writeFileSync } = await import("node:fs");
+    writeFileSync(join(testDir, "diff.txt"), "old line\n");
+
+    const result = await writeTool.execute(
+      { file_path: "diff.txt", content: "new line\n" },
+      { cwd: testDir },
+    );
+    expect(result.success).toBe(true);
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: needed to strip ANSI
+    const plain = result.output.replace(/\x1b\[[0-9;]*m/g, "");
+    expect(plain).toContain("- old line");
+    expect(plain).toContain("+ new line");
+  });
+
+  test("sets isNewFile correctly in data", async () => {
+    const newResult = await writeTool.execute(
+      { file_path: "brand-new.txt", content: "hello" },
+      { cwd: testDir },
+    );
+    expect(newResult.data?.isNewFile).toBe(true);
+
+    const overwriteResult = await writeTool.execute(
+      { file_path: "brand-new.txt", content: "updated" },
+      { cwd: testDir },
+    );
+    expect(overwriteResult.data?.isNewFile).toBe(false);
   });
 
   test("returns error when write fails on unwritable path", async () => {

@@ -443,6 +443,64 @@ describe("buildAITools via runAgent", () => {
     expect(result).toEqual({ structured: true });
   });
 
+  test("stashed result preserves output when tool has data field", async () => {
+    const toolDef = makeTool({
+      execute: mock(async () => ({
+        success: true,
+        output: "human text",
+        data: { structured: true },
+      })),
+    });
+    const toolsMap = new Map([["test_tool", toolDef]]);
+
+    mockTool.mockClear();
+    mockStreamText.mockImplementation(() => {
+      const registeredDef = mockTool.mock.results[0]?.value;
+      return {
+        fullStream: (async function* () {
+          yield {
+            type: "tool-call",
+            toolName: "test_tool",
+            toolCallId: "tc-stash",
+            input: { arg: "test" },
+          };
+          // Simulate AI SDK calling the execute wrapper (populates stash)
+          if (registeredDef) {
+            await registeredDef.execute({ arg: "test" }, { toolCallId: "tc-stash" });
+          }
+          yield {
+            type: "tool-result",
+            toolName: "test_tool",
+            toolCallId: "tc-stash",
+            output: { structured: true },
+          };
+          yield { type: "finish", totalUsage: { inputTokens: 10, outputTokens: 5 } };
+        })(),
+        response: Promise.resolve({ messages: [] }),
+        finishReason: Promise.resolve("stop"),
+      };
+    });
+
+    const events = await collectEvents([], {
+      model: fakeModel,
+      config: baseConfig,
+      tools: toolsMap,
+    });
+    const toolResult = events.find(
+      (e) => e.type === "tool-result" && (e as any).toolCallId === "tc-stash",
+    );
+    expect(toolResult).toEqual({
+      type: "tool-result",
+      toolName: "test_tool",
+      toolCallId: "tc-stash",
+      result: {
+        success: true,
+        output: "human text",
+        data: { structured: true },
+      },
+    });
+  });
+
   test("onPreToolUse hook blocks tool execution", async () => {
     const toolDef = makeTool();
     const toolsMap = new Map([["test_tool", toolDef]]);
