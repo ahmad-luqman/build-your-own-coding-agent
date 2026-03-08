@@ -6,15 +6,22 @@ import type { ToolDefinition } from "../types.js";
 
 const editEntrySchema = z.object({
   file_path: z.string().describe("Path to the file to edit"),
-  old_string: z.string().describe("The exact string to find and replace"),
+  old_string: z
+    .string()
+    .min(1, "old_string must not be empty")
+    .describe("The exact string to find and replace"),
   new_string: z.string().describe("The replacement string"),
 });
+
+type EditEntry = z.infer<typeof editEntrySchema>;
 
 const inputSchema = z.object({
   edits: z
     .array(editEntrySchema)
     .min(1)
-    .describe("Array of edits to apply atomically — all succeed or none do"),
+    .describe(
+      "Array of edits to apply as a batch — validated before writing, with best-effort rollback on failure",
+    ),
 });
 
 interface FileEditGroup {
@@ -23,7 +30,7 @@ interface FileEditGroup {
 }
 
 interface EditDetail {
-  filePath: string;
+  resolvedPath: string;
   editIndex: number;
   editLine: number;
   linesRemoved: number;
@@ -37,12 +44,8 @@ interface ValidatedFile {
   editDetails: EditDetail[];
 }
 
-function groupEditsByFile(
-  edits: Array<{ file_path: string; old_string: string; new_string: string }>,
-  cwd: string,
-): FileEditGroup[] {
+function groupEditsByFile(edits: EditEntry[], cwd: string): FileEditGroup[] {
   const groupMap = new Map<string, FileEditGroup>();
-  const order: string[] = [];
 
   for (let i = 0; i < edits.length; i++) {
     const resolvedPath = resolve(cwd, edits[i].file_path);
@@ -50,7 +53,6 @@ function groupEditsByFile(
     if (!group) {
       group = { resolvedPath, edits: [] };
       groupMap.set(resolvedPath, group);
-      order.push(resolvedPath);
     }
     group.edits.push({
       old_string: edits[i].old_string,
@@ -59,7 +61,7 @@ function groupEditsByFile(
     });
   }
 
-  return order.map((p) => groupMap.get(p)!);
+  return [...groupMap.values()];
 }
 
 function validateFileEdits(
@@ -72,29 +74,29 @@ function validateFileEdits(
   const editDetails: EditDetail[] = [];
 
   for (const edit of group.edits) {
-    const count = content.split(edit.old_string).length - 1;
-    if (count === 0) {
+    const firstIdx = content.indexOf(edit.old_string);
+    if (firstIdx === -1) {
       return {
         valid: false,
         error: `Edit ${edit.editIndex}: old_string not found in ${group.resolvedPath}`,
       };
     }
-    if (count > 1) {
+    if (content.indexOf(edit.old_string, firstIdx + 1) !== -1) {
       return {
         valid: false,
-        error: `Edit ${edit.editIndex}: old_string found ${count} times in ${group.resolvedPath} — must be unique`,
+        error: `Edit ${edit.editIndex}: old_string found multiple times in ${group.resolvedPath} — must be unique`,
       };
     }
 
-    const beforeEdit = content.slice(0, content.indexOf(edit.old_string));
+    const beforeEdit = content.slice(0, firstIdx);
     const editLine = beforeEdit.split("\n").length;
     const linesRemoved = edit.old_string.split("\n").length;
     const linesAdded = edit.new_string.split("\n").length;
 
-    content = content.replace(edit.old_string, edit.new_string);
+    content = content.replace(edit.old_string, () => edit.new_string);
 
     editDetails.push({
-      filePath: group.resolvedPath,
+      resolvedPath: group.resolvedPath,
       editIndex: edit.editIndex,
       editLine,
       linesRemoved,
@@ -107,20 +109,22 @@ function validateFileEdits(
 
 async function rollback(
   applied: Array<{ resolvedPath: string; originalContent: string }>,
-): Promise<void> {
+): Promise<string[]> {
+  const failed: string[] = [];
   for (const entry of applied) {
     try {
       await writeFile(entry.resolvedPath, entry.originalContent, "utf-8");
     } catch {
-      // Best-effort rollback — nothing more we can do
+      failed.push(entry.resolvedPath);
     }
   }
+  return failed;
 }
 
 export const multiEditTool: ToolDefinition = {
   name: "multi_edit",
   description:
-    "Apply multiple edits atomically across one or more files. All edits are validated before " +
+    "Apply multiple edits as a batch across one or more files. All edits are validated before " +
     "any changes are written — if any edit is invalid, no files are modified. Edits to the same " +
     "file are applied in array order. Each edit replaces an exact unique string match.",
   inputSchema,
@@ -129,7 +133,7 @@ export const multiEditTool: ToolDefinition = {
     try {
       const groups = groupEditsByFile(input.edits, ctx.cwd);
 
-      // Phase 1: Validate all edits
+      // Phase 1: Read files and validate all edits
       const validated: ValidatedFile[] = [];
       for (const group of groups) {
         let originalContent: string;
@@ -157,44 +161,55 @@ export const multiEditTool: ToolDefinition = {
         });
       }
 
-      // Phase 2: Apply all edits
+      // Phase 2: Apply all edits (track for rollback before writing)
       const applied: Array<{ resolvedPath: string; originalContent: string }> = [];
       for (const file of validated) {
+        applied.push({ resolvedPath: file.resolvedPath, originalContent: file.originalContent });
         try {
           await writeFile(file.resolvedPath, file.finalContent, "utf-8");
-          applied.push({ resolvedPath: file.resolvedPath, originalContent: file.originalContent });
         } catch (err) {
-          await rollback(applied);
+          const failedRollbacks = await rollback(applied);
           const msg = err instanceof Error ? err.message : String(err);
-          return {
-            success: false,
-            output: "",
-            error: `Failed to write ${file.resolvedPath}: ${msg}`,
-          };
+          let error = `Failed to write ${file.resolvedPath}: ${msg}`;
+          if (failedRollbacks.length > 0) {
+            error += `\nWARNING: Rollback failed for: ${failedRollbacks.join(", ")}. These files may be in a modified state.`;
+          }
+          return { success: false, output: "", error };
         }
       }
 
-      // Build result
-      const allDetails: EditDetail[] = [];
-      const diffParts: string[] = [];
-      for (const file of validated) {
-        allDetails.push(...file.editDetails);
-        const diff = formatDiff(file.originalContent, file.finalContent, file.resolvedPath);
-        if (diff) {
-          diffParts.push(diff);
+      // Phase 3: Build result — edits are committed, so always report success
+      try {
+        const allDetails: EditDetail[] = [];
+        const diffParts: string[] = [];
+        for (const file of validated) {
+          allDetails.push(...file.editDetails);
+          const diff = formatDiff(file.originalContent, file.finalContent, file.resolvedPath);
+          if (diff) {
+            diffParts.push(diff);
+          }
         }
-      }
 
-      const output = diffParts.join("\n") || `Edited ${validated.length} file(s)`;
-      return {
-        success: true,
-        output,
-        data: {
-          fileResults: allDetails,
-          totalFilesEdited: validated.length,
-          totalEditsApplied: input.edits.length,
-        },
-      };
+        const output = diffParts.join("\n") || `Edited ${validated.length} file(s)`;
+        return {
+          success: true,
+          output,
+          data: {
+            fileResults: allDetails,
+            totalFilesEdited: validated.length,
+            totalEditsApplied: input.edits.length,
+          },
+        };
+      } catch {
+        return {
+          success: true,
+          output: `Edited ${validated.length} file(s) (diff unavailable)`,
+          data: {
+            totalFilesEdited: validated.length,
+            totalEditsApplied: input.edits.length,
+          },
+        };
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       return { success: false, output: "", error: msg };

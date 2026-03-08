@@ -116,7 +116,7 @@ describe("multiEditTool", () => {
     );
 
     expect(result.success).toBe(false);
-    expect(result.error).toContain("3 times");
+    expect(result.error).toContain("multiple times");
   });
 
   test("fails on non-existent file", async () => {
@@ -189,6 +189,33 @@ describe("multiEditTool", () => {
     expect(result.error).toContain("Failed to write");
     // a.txt should be rolled back to original
     expect(readFileSync(join(testDir, "a.txt"), "utf-8")).toBe("aaa\n");
+  });
+
+  test("rolls back multiple files when third write fails", async () => {
+    writeFileSync(join(testDir, "a.txt"), "aaa\n");
+    writeFileSync(join(testDir, "b.txt"), "bbb\n");
+    const cPath = join(testDir, "c.txt");
+    writeFileSync(cPath, "ccc\n");
+    chmodSync(cPath, 0o444);
+
+    const result = await multiEditTool.execute(
+      {
+        edits: [
+          { file_path: "a.txt", old_string: "aaa", new_string: "xxx" },
+          { file_path: "b.txt", old_string: "bbb", new_string: "yyy" },
+          { file_path: "c.txt", old_string: "ccc", new_string: "zzz" },
+        ],
+      },
+      ctx,
+    );
+
+    chmodSync(cPath, 0o644);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Failed to write");
+    // Both a.txt and b.txt should be rolled back
+    expect(readFileSync(join(testDir, "a.txt"), "utf-8")).toBe("aaa\n");
+    expect(readFileSync(join(testDir, "b.txt"), "utf-8")).toBe("bbb\n");
   });
 
   test("output contains diff for each edited file", async () => {
@@ -265,7 +292,7 @@ describe("multiEditTool", () => {
   });
 
   test("catches unexpected errors gracefully", async () => {
-    // Pass malformed input that bypasses schema but causes runtime error
+    // null elements cause TypeError when accessing .file_path in groupEditsByFile
     const result = await multiEditTool.execute({ edits: [null as any] }, ctx);
 
     expect(result.success).toBe(false);
@@ -289,5 +316,81 @@ describe("multiEditTool", () => {
     expect(result.success).toBe(false);
     expect(result.error).toContain("Edit 2");
     expect(result.error).toContain("not found");
+  });
+
+  test("treats dollar-sign replacement patterns as literal text", async () => {
+    writeFileSync(join(testDir, "a.txt"), "const price = OLD;\n");
+
+    const result = await multiEditTool.execute(
+      { edits: [{ file_path: "a.txt", old_string: "OLD", new_string: "$& $` $' $$" }] },
+      ctx,
+    );
+
+    expect(result.success).toBe(true);
+    expect(readFileSync(join(testDir, "a.txt"), "utf-8")).toBe("const price = $& $` $' $$;\n");
+  });
+
+  test("groups edits with different relative paths to the same file", async () => {
+    mkdirSync(join(testDir, "sub"), { recursive: true });
+    writeFileSync(join(testDir, "sub", "a.txt"), "aaa\nbbb\n");
+
+    const result = await multiEditTool.execute(
+      {
+        edits: [
+          { file_path: "sub/a.txt", old_string: "aaa", new_string: "xxx" },
+          { file_path: "./sub/a.txt", old_string: "bbb", new_string: "yyy" },
+        ],
+      },
+      ctx,
+    );
+
+    expect(result.success).toBe(true);
+    expect(readFileSync(join(testDir, "sub", "a.txt"), "utf-8")).toBe("xxx\nyyy\n");
+    expect(result.data?.totalFilesEdited).toBe(1);
+    expect(result.data?.totalEditsApplied).toBe(2);
+  });
+
+  test("interleaved multi-file edits preserve correct ordering", async () => {
+    writeFileSync(join(testDir, "a.txt"), "aaa\nbbb\n");
+    writeFileSync(join(testDir, "b.txt"), "ccc\n");
+
+    const result = await multiEditTool.execute(
+      {
+        edits: [
+          { file_path: "a.txt", old_string: "aaa", new_string: "xxx" },
+          { file_path: "b.txt", old_string: "ccc", new_string: "zzz" },
+          { file_path: "a.txt", old_string: "bbb", new_string: "yyy" },
+        ],
+      },
+      ctx,
+    );
+
+    expect(result.success).toBe(true);
+    expect(readFileSync(join(testDir, "a.txt"), "utf-8")).toBe("xxx\nyyy\n");
+    expect(readFileSync(join(testDir, "b.txt"), "utf-8")).toBe("zzz\n");
+  });
+
+  test("rejects empty old_string", async () => {
+    writeFileSync(join(testDir, "a.txt"), "hello\n");
+
+    const result = await multiEditTool.execute(
+      { edits: [{ file_path: "a.txt", old_string: "", new_string: "inserted" }] },
+      ctx,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBeDefined();
+  });
+
+  test("detects overlapping matches as non-unique", async () => {
+    writeFileSync(join(testDir, "a.txt"), "ababa\n");
+
+    const result = await multiEditTool.execute(
+      { edits: [{ file_path: "a.txt", old_string: "aba", new_string: "xyz" }] },
+      ctx,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("multiple times");
   });
 });
