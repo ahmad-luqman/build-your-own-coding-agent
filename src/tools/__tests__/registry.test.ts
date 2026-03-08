@@ -4,8 +4,8 @@ import { createToolRegistry } from "../registry.js";
 describe("createToolRegistry", () => {
   const registry = createToolRegistry();
 
-  test("registers all 7 tools", () => {
-    expect(registry.size).toBe(7);
+  test("registers all 8 tools", () => {
+    expect(registry.size).toBe(8);
   });
 
   test("contains expected tool names", () => {
@@ -16,6 +16,7 @@ describe("createToolRegistry", () => {
     expect(names).toContain("tree");
     expect(names).toContain("write_file");
     expect(names).toContain("edit_file");
+    expect(names).toContain("multi_edit");
     expect(names).toContain("bash");
   });
 
@@ -29,6 +30,10 @@ describe("createToolRegistry", () => {
 
   test("marks edit_file as dangerous", () => {
     expect(registry.get("edit_file")?.dangerous).toBe(true);
+  });
+
+  test("marks multi_edit as dangerous", () => {
+    expect(registry.get("multi_edit")?.dangerous).toBe(true);
   });
 
   test("read_file is not dangerous", () => {

@@ -107,6 +107,37 @@ describe("formatToolSummary", () => {
     expect(result).toBe("src/foo.ts");
   });
 
+  test("multi_edit with edit and file counts", () => {
+    const result = formatToolSummary(
+      "multi_edit",
+      { edits: [] },
+      {
+        success: true,
+        output: "...",
+        data: { totalEditsApplied: 3, totalFilesEdited: 2 },
+      },
+    );
+    expect(result).toBe("3 edits applied across 2 files");
+  });
+
+  test("multi_edit singular forms", () => {
+    const result = formatToolSummary(
+      "multi_edit",
+      { edits: [] },
+      {
+        success: true,
+        output: "...",
+        data: { totalEditsApplied: 1, totalFilesEdited: 1 },
+      },
+    );
+    expect(result).toBe("1 edit applied across 1 file");
+  });
+
+  test("multi_edit without data defaults to zero", () => {
+    const result = formatToolSummary("multi_edit", { edits: [] }, { success: true, output: "..." });
+    expect(result).toBe("0 edits applied across 0 files");
+  });
+
   test("glob with file count", () => {
     const result = formatToolSummary(
       "glob",
@@ -199,6 +230,25 @@ describe("formatToolInput", () => {
 
   test("edit_file returns file path", () => {
     expect(formatToolInput("edit_file", { file_path: "src/app.ts" })).toBe("src/app.ts");
+  });
+
+  test("multi_edit returns edit and file count", () => {
+    const result = formatToolInput("multi_edit", {
+      edits: [{ file_path: "a.ts" }, { file_path: "b.ts" }, { file_path: "a.ts" }],
+    });
+    expect(result).toBe("3 edits in 2 files");
+  });
+
+  test("multi_edit singular forms", () => {
+    const result = formatToolInput("multi_edit", {
+      edits: [{ file_path: "a.ts" }],
+    });
+    expect(result).toBe("1 edit in 1 file");
+  });
+
+  test("multi_edit without edits array falls back to JSON", () => {
+    const result = formatToolInput("multi_edit", { something: "else" });
+    expect(result).toContain("something");
   });
 
   test("glob returns pattern", () => {
